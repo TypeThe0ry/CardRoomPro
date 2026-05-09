@@ -1,0 +1,21 @@
+/* Theme variables and simple utilities */
+:root{
+  --bg: #0f1720;
+  --card-bg: #ffffff;
+  --accent: #ff6b66; /* primary color set from user attachment (coral) */
+  --muted: #94a3b8;
+  --surface: rgba(255,255,255,0.04);
+  --glass: rgba(255,255,255,0.06);
+  --danger: #ef4444;
+  --success: #10b981;
+  --text: #e6eef6;
+  --card-width: 90px;
+  --card-height: 120px;
+}
+
+/* small helper */
+.hidden{display:none !important}
+.center{display:flex;align-items:center;justify-content:center}
+
+/* dark theme class for future toggling */
+.theme-dark{background:var(--bg);color:var(--text)}

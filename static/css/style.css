@@ -1,0 +1,649 @@
+ body {
+            font-family: "microsoft yahei";
+        }
+[v-cloak]{
+    display: none;
+}
+        .card {
+            height: 120px;
+            width: 90px;
+            display: inline-block;
+            font-weight: bold;
+            background-image: url('/images/poker.png');
+            background-repeat: no-repeat;
+            overflow: hidden;
+            position: absolute;
+            top: 0;
+        }
+
+        .card-14-0 {
+            background-position: 0 0;
+        }
+
+        .card-14-1 {
+            background-position: 0 -120px;
+        }
+
+        .card-14-2 {
+            background-position: 0 -240px;
+        }
+
+        .card-14-3 {
+            background-position: 0 -360px;
+        }
+
+        .card-15-0 {
+            background-position: -90px 0;
+        }
+
+        .card-15-1 {
+            background-position: -90px -120px;
+        }
+
+        .card-15-2 {
+            background-position: -90px -240px;
+        }
+
+        .card-15-3 {
+            background-position: -90px -360px;
+        }
+
+
+        .card-3-0 {
+            background-position: -180px 0;
+        }
+
+        .card-3-1 {
+            background-position: -180px -120px;
+        }
+
+        .card-3-2 {
+            background-position: -180px -240px;
+        }
+
+        .card-3-3 {
+            background-position: -180px -360px;
+        }
+
+        .card-4-0 {
+            background-position: -270px 0;
+        }
+
+        .card-4-1 {
+            background-position: -270px -120px;
+        }
+
+        .card-4-2 {
+            background-position: -270px -240px;
+        }
+
+        .card-4-3 {
+            background-position: -270px -360px;
+        }
+
+        .card-5-0 {
+            background-position: -360px 0;
+        }
+
+        .card-5-1 {
+            background-position: -360px -120px;
+        }
+
+        .card-5-2 {
+            background-position: -360px -240px;
+        }
+
+        .card-5-3 {
+            background-position: -360px -360px;
+        }
+
+
+        .card-6-0 {
+            background-position: -450px 0;
+        }
+
+        .card-6-1 {
+            background-position: -450px -120px;
+        }
+
+        .card-6-2 {
+            background-position: -450px -240px;
+        }
+
+        .card-6-3 {
+            background-position: -450px -360px;
+        }
+
+        .card-7-0 {
+            background-position: -540px 0;
+        }
+
+        .card-7-1 {
+            background-position: -540px -120px;
+        }
+
+        .card-7-2 {
+            background-position: -540px -240px;
+        }
+
+        .card-7-3 {
+            background-position: -540px -360px;
+        }
+
+
+        .card-8-0 {
+            background-position: -630px 0;
+        }
+
+        .card-8-1 {
+            background-position: -630px -120px;
+        }
+
+        .card-8-2 {
+            background-position: -630px -240px;
+        }
+
+        .card-8-3 {
+            background-position: -630px -360px;
+        }
+
+
+        .card-9-0 {
+            background-position: -720px 0;
+        }
+
+        .card-9-1 {
+            background-position: -720px -120px;
+        }
+
+        .card-9-2 {
+            background-position: -720px -240px;
+        }
+
+        .card-9-3 {
+            background-position: -720px -360px;
+        }
+
+
+        .card-10-0 {
+            background-position: -810px 0;
+        }
+
+        .card-10-1 {
+            background-position: -810px -120px;
+        }
+
+        .card-10-2 {
+            background-position: -810px -240px;
+        }
+
+        .card-10-3 {
+            background-position: -810px -360px;
+        }
+
+
+        .card-11-0 {
+            background-position: -900px 0;
+        }
+
+        .card-11-1 {
+            background-position: -900px -120px;
+        }
+
+        .card-11-2 {
+            background-position: -900px -240px;
+        }
+
+        .card-11-3 {
+            background-position: -900px -360px;
+        }
+
+        .card-12-0 {
+            background-position: -990px 0;
+        }
+
+        .card-12-1 {
+            background-position: -990px -120px;
+        }
+
+        .card-12-2 {
+            background-position: -990px -240px;
+        }
+
+        .card-12-3 {
+            background-position: -990px -360px;
+        }
+
+        .card-13-0 {
+            background-position: -1080px 0;
+        }
+
+        .card-13-1 {
+            background-position: -1080px -120px;
+        }
+
+        .card-13-2 {
+            background-position: -1080px -240px;
+        }
+
+        .card-13-3 {
+            background-position: -1080px -360px;
+        }
+
+        .card-16-0 {
+            background-position: -90px -480px;
+        }
+
+
+        .card-17-0 {
+            background-position: 0 -480px;
+        }
+
+        .card-unknow {
+            background-position: -180px -480px;
+        }
+
+
+        .full-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #fff;
+            overflow: auto;
+        }
+
+        .house {
+            background: #555;
+            padding-top:40px;
+        }
+
+        .desk {
+            position: relative;
+            height: 165px;
+            width: 165px;
+            float: left;
+            margin: 30px;
+        }
+
+        .position {
+            height: 40px;
+            width: 40px;
+            position: absolute;
+
+        }
+
+        .position-image {
+            height: 30px;
+            width: 30px;
+            display: block;
+            border: solid 1px #7b7b7b;
+            cursor: pointer;
+        }
+
+        .position-image:hover {
+            box-shadow: 2px 2px 1px #666;
+            border: solid 1px #666;
+
+        }
+
+        .position-image.has {
+            cursor: default;
+            border: solid 1px #555;
+            background: url('/images/qq.png') no-repeat center;
+            background-size: contain;
+        }
+
+        .position-image.has:hover {
+            box-shadow: none;
+        }
+
+        .position-text {
+            color: #fff;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: block;
+            width: 100%;
+        }
+
+        .position0 {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .position1 {
+            bottom: 20px;
+            left: 5px;
+        }
+
+        .position2 {
+            bottom: 20px;
+            right: 0px;
+        }
+       
+        .position-center {
+            border-radius: 50%;
+            background-size: 60px;
+            width: 60px;
+            height: 60px;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-image:url('/images/desk.png');
+            line-height: 60px;
+            text-align: center;
+            color: #80671c;
+            font-weight: bold;
+        }
+
+        .room {
+            background: #297077;
+        }
+
+        .btn-exit-room {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+        }
+
+
+
+        .card-group {
+            position: fixed;
+            height: 120px;
+            width: 50%;
+        }
+
+        .card-group-self {
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+
+        }
+        .card-group-self{
+            transition: width 0.2s;
+        }
+
+        .card-group-right {
+            right: 100px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .card-group-top {
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+
+
+        }
+
+        .card-group-left {
+            top: 50%;
+            left: 100px;
+            transform: translateY(-50%);
+        }
+
+        .btn-prepare {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        button {
+            cursor: pointer;
+            background: #ff6b66;
+            outline: none;
+            border: none;
+            color: #fff;
+            padding: 5px 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            font-family: "microsoft yahei";
+        }
+
+        .btn-group {
+            position: absolute;
+            bottom: 190px;
+            text-align: center;
+            width: 100%;
+            left: 0;
+            vertical-align: middle;
+        }
+
+        .btn-group>* {
+            vertical-align: middle;
+        }
+        .btn-call + .btn-call{
+            margin-left: 15px;
+        }
+        .score-tipe{
+            color: #0bfb0b;
+            font-size: 30px;
+            text-shadow: 3px 3px 3px #888;
+            position: absolute;
+            left: 50%;
+            bottom: 0;
+            transform: translateX(-50%);
+            text-align: center;
+            display: inline-block;
+            white-space: nowrap;
+        }
+
+        .clock {
+            background: url('/images/clock.png') no-repeat;
+            background-size: contain;
+            width: 58px;
+            height: 60px;
+            display: inline-block;
+            margin-top: -1px;
+            text-align: center;
+            color: #81681c;
+            line-height: 60px;
+            background-position: center;
+            font-weight: bold;
+        }
+
+        .text-tips {
+            color: #fff;
+            position: absolute;
+            width: 100px;
+            bottom: -25px;
+        }
+
+        .text-tips-left {
+            left: 0;
+        }
+
+        .text-tips-right {
+            right: 0;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .text-left {
+            text-align: left;
+        }
+
+        .icon-group {
+            position: absolute;
+            top: -55px;
+        }
+
+        .icon-group-right {
+            right: 10px;
+        }
+
+        .icon-group-left {
+            left: 10px;
+        }
+
+        .card-ctx {
+            position: absolute;
+            height: 120px;
+
+        }
+
+        .card-ctx-self {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .card-ctx-left {
+            top: -130px;
+            left: 230px;
+        }
+
+        .card-ctx-right {
+            top: -130px;
+            right: 230px;
+        }
+
+        .screen-center {
+            position: fixed;
+            top: 50%;
+            left: 0;
+            height: 120px;
+            width: 100%;
+            transform: translateY(-50%);
+        }
+
+        .player-wrapper{
+            height: 100px;
+            width: 100px;
+            color: #fff;
+            position: absolute;
+        }
+        .player-photo{
+            width: 100%;
+            height: 80px;
+            background-image: url('../images/qq.png') ;
+            background-repeat:  no-repeat;
+            background-position:  center;
+        }
+        .player-photo-king{
+            background-image: url('../images/qq-king.png')!important;
+        }
+        .player-name{
+            font-size: 12px;
+        }
+        .player-status{
+            text-shadow: 2px 2px 5px #000;
+            color: rgb(25, 242, 0);
+        }
+        .text-center{
+            text-align: center
+        }
+        .player-right{
+            right: 0;
+        }
+       .player-wrapper.player-self{
+           position: fixed;
+           bottom: 50px;
+           left:50%;
+           transform: translateX(-50%);
+       }
+       .player-self-ctx{
+        position: absolute;
+        right: -100px;
+       }
+
+       .login-wrapper{
+           background: #ccc;
+       }
+       .login-form{
+           white-space: nowrap;
+       }
+       .input{
+        height: 31px;
+        border: none;
+        vertical-align: top;
+        padding: 0 10px;
+       }
+       .title{
+           color:#ff6b66;
+           padding:20px 0;
+       }
+       .layout-center{
+           position: fixed;
+           top:50%;
+           left:50%;
+           transform: translate(-50%,-50%);
+       }
+       .msg-title{
+        font-size: 20px;
+        margin-bottom: 5px;
+       }
+       .msg-success{
+           color:#29ba9d
+       }
+       .msg-fail{
+            color:#c80000
+        }
+        
+        .msg-box{
+            position: fixed;
+            bottom: 0;
+            right: 0;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.3);
+            word-spacing: -5px;
+        }
+        .msg-select{
+            outline: none;
+        }
+        .input.msg-input{
+            height: 22px;
+        }
+        .msg-btn{
+            height: 22px;
+            font-size: 10px;
+            line-height: 15px;
+            border-radius: 0px!important;
+        }
+        .msg-list{
+            min-height: 200px;
+            max-height: 400px;
+            overflow-x:hidden;
+            overflow-y:auto;
+            color:#fff;
+            margin-bottom:10px;
+            font-size: 12px;
+        }
+        .msg-item{
+            padding: 5px 0;
+            max-width: 220px;
+            word-break: break-all;
+        }
+        .msg-item-time{
+            padding-right: 10px;
+        }
+        .quick-bar{
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            box-sizing: border-box;
+            padding: 5px 30px;
+            background: rgba(0,0,0,0.2);
+        }
+        .scroll-bar::-webkit-scrollbar {
+            width: 10px;    
+            height: 1px;
+        }
+        .scroll-bar::-webkit-scrollbar-thumb {
+            border-radius: 10px;
+             -webkit-box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+             background: rgba(0, 0, 0, 0.1);
+        }
+        .scroll-bar::-webkit-scrollbar-track {
+            -webkit-box-shadow: inset 0 0 5px rgba(0,0,0,0.2);
+            border-radius: 10px;
+        }
