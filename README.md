@@ -1,5 +1,7 @@
 # 雀阁 · 在线斗地主
 
+> **Forked from** [laivv/doudizhu](https://github.com/laivv/doudizhu.git)
+
 > **Fight the Landlord** — 一桌国风茶馆，三人对坐，落子如雀。
 > 基于 Node.js + Vue 2 + Socket.IO 的多人在线斗地主，支持 **真人对战 / AI 陪玩 / 观战 / 智囊推荐 / 国风音画**。
 
