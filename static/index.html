@@ -38,40 +38,48 @@
     <!-- 大厅 -->
     <div class="full-screen house" v-if="where === 1">
       <div class="row text-right quick-bar">
+        <button class="btn-ghost btn-mute" type="button" @click="toggleMute"
+          :title="muted ? '开启音效' : '静音'">{{muted ? '♪ 静音' : '♪ 音效'}}</button>
         <button @click="quickJoin">快速入局</button>
       </div>
-      <div v-for="desk in desks" class="desk">
+      <div v-for="desk in desks" class="desk" :class="{'desk-busy': deskBusyCount(desk) > 0}">
         <div v-for="position in desk.positions" class="position" :class="{has:position.state,position0:position.posId === 0,position1:position.posId === 1,position2:position.posId === 2}">
           <span class="position-image" :class="{has:position.state}" @click="sitDown(desk.deskId,position)">
           </span>
-          <!-- <span class="position-text" v-if="position.state">{{position.userName}}</span> -->
         </div>
         <div class="position-center">{{desk.deskId}}</div>
+        <button v-if="deskBusyCount(desk) > 0 && deskBusyCount(desk) < 3 || deskBusyCount(desk) === 3"
+          class="desk-spectate" type="button" @click.stop="spectate(desk.deskId)"
+          :title="'观战 ' + desk.deskId + ' 号桌'">观 战</button>
       </div>
     </div>
     <!-- 房间 -->
-    <div class="full-screen room" v-if="where === 2">
-      <button class="btn-exit-room" @click="exitRoom">返回大厅</button>
+    <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec}">
+      <button class="btn-exit-room" @click="exitRoom">{{isSpec ? '退出观战' : '返回大厅'}}</button>
+      <div v-if="isSpec" class="spec-badge">观 战 模 式</div>
 
-      <div class="btn-group" v-if="roomState.state > 0 && roomState.state < 3 && roomState.ctxPos === 'self'">
+      <div class="btn-group" v-if="!isSpec && roomState.state > 0 && roomState.state < 3 && roomState.ctxPos === 'self'">
         <span class="clock">{{roomState.timeout}}</span>
         <template v-if="roomState.state === 1">
           <button class="btn btn-call" v-for="score in roomState.ctxScore" @click="callScore(score)">{{score}}分</button>
           <button class="btn btn-call" @click="callScore(0)">不叫</button>
         </template>
         <template v-if="roomState.state === 2">
+          <button class="btn btn-ghost btn-ai" type="button" @click="aiSuggest" title="智囊推荐">智 囊</button>
           <button class="btn btn-vermilion" @click="playCards">出  牌</button>
           <button class="btn btn-jade" @click="passCards" v-if="roomState.ctxCard.ctxPos !== roomState.ctxPos">不  出</button>
         </template>
 
       </div>
 
-      <button v-if="posState.self.state < 2" @click="prepare" class="btn-prepare">准 备</button>
+      <button v-if="!isSpec && posState.self.state < 2" @click="prepare" class="btn-prepare">准 备</button>
+
+      <div v-if="isSpec && roomState.state === 0" class="spec-tip">本桌正在准备中，待开局后可观战。</div>
 
       <div class="card-groups" v-if="roomState.state">
 
         <!-- 自己的牌列表 -->
-        <div class="card-group card-group-self" :style="{width:posState.self.cards.length * 20 + 70 + 'px'}" v-if="!(roomState.state === 3 && posState.self.state === 2)">
+        <div class="card-group card-group-self" :style="{width:posState.self.cards.length * 20 + 70 + 'px'}" v-if="!isSpec && !(roomState.state === 3 && posState.self.state === 2)">
           <div @dragStart="dragStart($event)" @click="selectCard(card)" v-for="(card,index) in posState.self.cards"
             class="card" :class="'card-' + card.value + '-' + card.type" :style="{left:index * 20 + 'px',top:card.selected ? '-20px' : 0}">
           </div>
@@ -245,6 +253,8 @@
   <script src="/js/jquery.min.js"></script>
   <script src="/js/layer/layer.js"></script>
   <script src="/js/parser.js"></script>
+  <script src="/js/ai-suggest.js"></script>
+  <script src="/js/effects.js"></script>
   <script>
 
 
@@ -284,6 +294,8 @@
           msgList: [],//聊天消息
           chatCollapsed: false,//聊天面板收起态
           _msgSeq: 0,//本地消息序号兜底，避免 :key 冲突
+          isSpec: false,//是否处于观战模式
+          muted: false,//全局静音
 
           where: 0,//0登录界面 1大厅 2房间,
           isAutoLogin: false,
@@ -418,6 +430,29 @@
             layer.closeAll();
           }.bind(this));
 
+          // 观战进入成功
+          this.client.on('SPECTATE_SUCCESS', function (data) {
+            this.where = 2;
+            this.deskId = data.deskId;
+            this.isSpec = true;
+            this.posId = 'spec';
+            // 初始化座位状态名字
+            (data.positions || []).forEach(function (p) {
+              this.updatePosStatus(p.posId, p.state, p.userName);
+            }.bind(this));
+            this.posState.self.isDizhu = false;
+            this.$nextTick(function () {
+              if (this.$refs.msgSelect) this.$refs.msgSelect.value = '';
+            });
+            layer.closeAll();
+            layer.msg('已进入观战', { time: 1200 });
+          }.bind(this));
+
+          this.client.on('SPECTATE_ERROR', function (data) {
+            layer.closeAll();
+            layer.msg(data.msg || '观战失败');
+          }.bind(this));
+
           this.client.on('REFRESH_LIST', function (data) {
             this.desks = data;
           }.bind(this));
@@ -481,6 +516,11 @@
             this.posState.right.ctxCards = [];
             this.posState.self.ctxCards = [];
 
+            // —— 发牌音效 ——
+            if (window.FX) {
+              FX.beep('deal');
+              setTimeout(function () { window.FX && FX.beep('deal'); }, 220);
+            }
 
           }.bind(this));
 
@@ -507,6 +547,12 @@
             this.posState[direct].isDizhu = true;
             this.roomState.timeout = data.timeout;
             this.startTimer(this.autoPlayCards.bind(this));
+
+            // —— 地主登场特效 ——
+            if (window.FX) {
+              FX.flash('地 主', { cls: 'fx-king-emerge', life: 1600 });
+              FX.beep('call');
+            }
           }.bind(this));
 
 
@@ -531,7 +577,14 @@
             this.roomState.timeout = data.timeout;
             this.startTimer(this.autoPlayCards.bind(this));
 
-
+            // —— 特效与音效 ——
+            if (window.FX) {
+              if (data.isPass) {
+                FX.play('PASS', { isPass: true });
+              } else if (data.ctxData.type) {
+                FX.play(data.ctxData.type, { posDir: direct });
+              }
+            }
           }.bind(this));
 
           this.client.on('PLAY_CARD_ERROR', function (data) {
@@ -543,8 +596,9 @@
           }.bind(this))
 
           this.client.on('GAME_OVER', function (data) {
-            var msg = data.winner.indexOf(this.posId) > - 1 ? '恭喜你，你赢了' : '很遗憾，你输了';
-            var icon = data.winner.indexOf(this.posId) > - 1 ? 6 : 5;
+            var iWon = !this.isSpec && data.winner.indexOf(this.posId) > - 1;
+            var msg = this.isSpec ? '本局结束' : (iWon ? '恭喜你，你赢了' : '很遗憾，你输了');
+            var icon = (this.isSpec || iWon) ? 6 : 5;
 
 
             var content = '<div class="msg-title msg-' + (icon === 6 ? 'success' : 'fail') + '">' + msg + '</div><div>本局游戏统计如下：</div>';
@@ -584,6 +638,9 @@
             this.posState.self.state = 1;
             this.posState.self.callScore = -1;
             this.posState.self.isPass = false;
+
+            // —— 胜负音效 ——
+            if (window.FX) FX.beep(iWon ? 'win' : (this.isSpec ? 'win' : 'lose'));
 
           }.bind(this));
 
@@ -648,6 +705,7 @@
           this.posState.self.callScore = score;
           this.roomState.ctxPos = '';
           this.client.emit('CALL_SCORE', { score: score });
+          if (window.FX) FX.beep('chip');
         },
         updateCtxInfo: function (data) {
           var ctx = data;
@@ -684,6 +742,10 @@
             }
             timer = setInterval(function () {
               self.roomState.timeout--;
+              if (self.roomState.timeout > 0 && self.roomState.timeout <= 5
+                && self.roomState.ctxPos === 'self' && !self.isSpec) {
+                window.FX && FX.beep('tick');
+              }
               if (self.roomState.timeout <= 0) {
                 clearInterval(timer);
                 timer = null;
@@ -702,6 +764,8 @@
         },
         //通过posId获取是哪个方向的坐位
         getDirectionByPosId: function (posId) {
+          // 观战者视角固定为：0->self(下), 1->right(右), 2->left(左)
+          var pivot = this.isSpec ? 0 : this.posId;
           var mapping = {
             0: {
               0: 'self',
@@ -723,7 +787,7 @@
             }
 
           }
-          return mapping[this.posId][posId];
+          return mapping[pivot] && mapping[pivot][posId];
         },
         updatePosStatus: function (posId, state, name) {
           var direct = this.getDirectionByPosId(posId);
@@ -743,18 +807,30 @@
           }
         },
         exitRoom: function () {
-          this.client.emit('UNSITDOWN');
+          if (this.isSpec) {
+            this.client.emit('UNSPECTATE');
+          } else {
+            this.client.emit('UNSITDOWN');
+          }
           layer.load({ type: 3 });
         },
         resetRoomStatus: function () {
           this.where = 1;
           this.posId = '';
           this.deskId = '';
+          this.isSpec = false;
           this.posState.self.state = 0;
           this.roomState.state = 0;
           this.posState.left.callScore = -1;
           this.posState.right.callScore = -1;
           this.posState.self.callScore = -1;
+          this.posState.left.cards = [];
+          this.posState.right.cards = [];
+          this.posState.self.cards = [];
+          this.posState.top.cards = [];
+          this.posState.left.ctxCards = [];
+          this.posState.right.ctxCards = [];
+          this.posState.self.ctxCards = [];
         },
         getSelectdCards: function () {
           return this.posState.self.cards.filter(function (card) {
@@ -815,7 +891,9 @@
           e.preventDefault();
         },
         selectCard: function (card) {
+          if (this.isSpec) return;
           card.selected = !card.selected;
+          if (window.FX) FX.beep('chip');
         },
         initCards: function (cards) {
           cards.forEach(function (cardGroup, index) {
@@ -844,7 +922,67 @@
         quickJoin: function () {
           layer.load({ type: 3 });
           this.client.emit('QUICK_JOIN');
+        },
+        // 大厅：统计某桌已落座人数
+        deskBusyCount: function (desk) {
+          var n = 0;
+          (desk.positions || []).forEach(function (p) { if (p.state > 0) n++; });
+          return n;
+        },
+        // 观战
+        spectate: function (deskId) {
+          layer.load({ type: 3 });
+          this.client.emit('SPECTATE', { deskId: deskId });
+        },
+        // 静音切换
+        toggleMute: function () {
+          this.muted = !this.muted;
+          if (window.FX) FX.setMuted(this.muted);
+          else {
+            // FX 未就绪时延后应用
+            var self = this;
+            setTimeout(function () { window.FX && FX.setMuted(self.muted); }, 50);
+          }
+        },
+        // AI 智囊：自动选牌
+        aiSuggest: function () {
+          if (this.isSpec) return;
+          if (this.roomState.state !== 2 || this.roomState.ctxPos !== 'self') {
+            return layer.msg('暂未到出牌时机');
+          }
+          if (!window.AISuggest) return;
+          var lastInfo = {
+            len: this.roomState.ctxCard.len,
+            key: this.roomState.ctxCard.key,
+            type: this.roomState.ctxCard.type,
+            ctxPos: this.roomState.ctxCard.ctxPos
+          };
+          var picks = AISuggest.suggest(this.posState.self.cards, lastInfo);
+          // 先全部反选
+          this.posState.self.cards.forEach(function (c) { c.selected = false; });
+          if (!picks || !picks.length) {
+            window.FX && FX.beep('tick');
+            return layer.msg('无可压制的牌，建议「不出」');
+          }
+          // 把建议的牌打勾（按 value+type 匹配，且每张只标记一次）
+          var used = {};
+          picks.forEach(function (pk) {
+            var k = pk.value + '_' + pk.type;
+            if (used[k]) return;
+            for (var i = 0; i < this.posState.self.cards.length; i++) {
+              var c = this.posState.self.cards[i];
+              if (!c.selected && c.value === pk.value && c.type === pk.type) {
+                c.selected = true;
+                used[k] = true;
+                break;
+              }
+            }
+          }.bind(this));
+          window.FX && FX.beep('chip');
         }
+      },
+      computed: {
+        // 占位（保留扩展）
       }
     })
 

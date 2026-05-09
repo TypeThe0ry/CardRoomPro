@@ -312,6 +312,12 @@ const proto = {
         if (!deskId) {
           return;
         }
+        // 观战者走专用退出逻辑
+        if (posId === 'spec') {
+          this.updateClientState(socket);
+          socket.emit('UNSITDOWN_SUCCESS', this.desks);
+          return;
+        }
         console.log('有客户端退出房间，桌号：%s，座位：%s，时间：', deskId, posId, time());
         //更新座位状态
         this.updatePosStatus(deskId, posId, 0, '');
@@ -356,7 +362,7 @@ const proto = {
 
       socket.on('PREPARE', data => {
         const client = this.getClient(socket);
-        if (!client) {
+        if (!client || client.posId === 'spec') {
           return;
         }
         const { deskId, posId } = client;
@@ -384,7 +390,7 @@ const proto = {
       socket.on('CALL_SCORE', data => {
         const { score } = data;
         const client = this.getClient(socket);
-        if (!client) {
+        if (!client || client.posId === 'spec') {
           return;
         }
         const { deskId, posId } = client;
@@ -428,7 +434,7 @@ const proto = {
 
       socket.on('PLAY_CARD', data => {
         const client = this.getClient(socket);
-        if (!client) {
+        if (!client || client.posId === 'spec') {
           return;
         }
         const { deskId, posId } = client;
@@ -479,6 +485,13 @@ const proto = {
         this.removeClient(socket);
 
         if (deskId) {
+          // 观战者断连：不动座位/游戏状态
+          if (posId === 'spec') {
+            const userName2 = userName || '观众';
+            this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName2}]离开房间`, id: guid(), time: time() });
+            console.log('观战者断开连接 %s', time());
+            return;
+          }
           //更新座位状态
           this.updatePosStatus(deskId, posId, 0, '');
           //重置房间状态
@@ -527,8 +540,64 @@ const proto = {
         if (!deskId) {
           return;
         }
+        // 观战者发言走特殊通道，不参与方位映射
+        if (posId === 'spec') {
+          const userName = this.getUserName(socket) || '观众';
+          const payload = { type: 'SPEC', posId: 'spec', name: userName, msg, time: time(), id: guid() };
+          this.broadCastRoom('USER_MESSAGE', deskId, payload);
+          socket.emit('USER_MESSAGE', payload);
+          return;
+        }
         this.broadCastRoom('USER_MESSAGE', deskId, { type: 'USER', posId, msg, time: time(), id: guid() })
       })
+
+      // 观战 加入
+      socket.on('SPECTATE', data => {
+        const client = this.getClient(socket);
+        if (!client) {
+          return;
+        }
+        // 已经在某桌
+        if (client.deskId) {
+          socket.emit('SPECTATE_ERROR', { msg: '您已在房间内' });
+          return;
+        }
+        const deskId = data && data.deskId;
+        const desk = this.getDesk(deskId);
+        if (!desk) {
+          socket.emit('SPECTATE_ERROR', { msg: '房间不存在' });
+          return;
+        }
+        // 至少要有一名玩家在座
+        const seated = desk.positions.filter(p => p.state > 0).length;
+        if (seated === 0) {
+          socket.emit('SPECTATE_ERROR', { msg: '房间无人，无法观战' });
+          return;
+        }
+        this.updateClientState(socket, deskId, 'spec');
+        const game = this.gameDatas[deskId];
+        const gameInProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
+        socket.emit('SPECTATE_SUCCESS', {
+          deskId,
+          positions: desk.positions,
+          gameInProgress,
+        });
+        const userName = this.getUserName(socket) || '观众';
+        this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName}]进入房间`, id: guid(), time: time() }, socket);
+      });
+
+      // 观战 离开
+      socket.on('UNSPECTATE', () => {
+        const client = this.getClient(socket);
+        if (!client || client.posId !== 'spec') {
+          return;
+        }
+        const { deskId } = client;
+        this.updateClientState(socket);
+        socket.emit('UNSITDOWN_SUCCESS', this.desks);
+        const userName = this.getUserName(socket) || '观众';
+        this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName}]离开房间`, id: guid(), time: time() }, socket);
+      });
 
 
     }.bind(this));
