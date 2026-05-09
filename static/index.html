@@ -5,27 +5,32 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
-  <title>在线斗地主</title>
+  <meta name="theme-color" content="#0e2422">
+  <title>雀阁 · 在线斗地主</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/theme.css">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 
-<body>
+<body class="theme-guofeng">
   <div id="app" v-cloak>
     <!-- 登录界面 -->
     <div class="full-screen login-wrapper" v-if="where === 0">
       <div class="login-panel  layout-center">
         <div class="row title">
-          登录游戏服务器
+          雀阁
         </div>
-        <div class="login-form">
-          <template v-if="isAutoLogin">
-            <div class="auto-login">正在使用 Discuz 登录，正在连接...</div>
-          </template>
-          <template v-else>
-            <input type="text" class="input" placeholder="给自己取一个名字" v-model.trim="posState.self.name" @keyup.enter="login"><button
-              @click="login">确定</button>
-          </template>
-        </div>
+        <template v-if="isAutoLogin">
+          <div class="auto-login">正在使用 Discuz 登录，请稍候…</div>
+        </template>
+        <template v-else>
+          <div class="login-form">
+            <input type="text" class="input" placeholder="请输入您的雅号" v-model.trim="posState.self.name" @keyup.enter="login"><button
+              @click="login">入  座</button>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -33,7 +38,7 @@
     <!-- 大厅 -->
     <div class="full-screen house" v-if="where === 1">
       <div class="row text-right quick-bar">
-        <button @click="quickJoin">快速加入</button>
+        <button @click="quickJoin">快速入局</button>
       </div>
       <div v-for="desk in desks" class="desk">
         <div v-for="position in desk.positions" class="position" :class="{has:position.state,position0:position.posId === 0,position1:position.posId === 1,position2:position.posId === 2}">
@@ -55,13 +60,13 @@
           <button class="btn btn-call" @click="callScore(0)">不叫</button>
         </template>
         <template v-if="roomState.state === 2">
-          <button class="btn" @click="playCards">出牌</button>
-          <button class="btn" @click="passCards" v-if="roomState.ctxCard.ctxPos !== roomState.ctxPos">不出</button>
+          <button class="btn btn-vermilion" @click="playCards">出  牌</button>
+          <button class="btn btn-jade" @click="passCards" v-if="roomState.ctxCard.ctxPos !== roomState.ctxPos">不  出</button>
         </template>
 
       </div>
 
-      <button v-if="posState.self.state < 2" @click="prepare" class="btn-prepare">准备</button>
+      <button v-if="posState.self.state < 2" @click="prepare" class="btn-prepare">准 备</button>
 
       <div class="card-groups" v-if="roomState.state">
 
