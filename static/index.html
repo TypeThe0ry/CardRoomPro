@@ -561,9 +561,13 @@
             this.roomState.timeout = data.timeout;
             this.startTimer(this.autoPlayCards.bind(this));
 
-            // —— 地主登场特效 ——
+            // —— 身份登场特效（地主 / 农民 因人而异）——
             if (window.FX) {
-              FX.flash('地 主', { cls: 'fx-king-emerge', life: 1600 });
+              if (direct === 'self') {
+                FX.flash('地 主', { cls: 'fx-king-emerge', life: 1600 });
+              } else {
+                FX.flash('农 民', { cls: 'fx-farmer-emerge', life: 1600 });
+              }
               FX.beep('call');
             }
           }.bind(this));
