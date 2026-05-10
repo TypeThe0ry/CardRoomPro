@@ -441,6 +441,7 @@ const proto = {
       if (socket.user) {
         try {
           this.addClient(socket, { userName: socket.user.username, uid: socket.user.uid });
+          socket.emit('WHOAMI', { uid: socket.user.uid, username: socket.user.username });
           socket.emit('LOGIN_SUCCESS', this.desks);
           console.log('已通过 token 自动登录用户：%s (uid=%s)', socket.user.username, socket.user.uid);
           // 推送一次该用户的积分

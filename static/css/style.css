@@ -316,6 +316,37 @@ button.btn-ghost {
 }
 .quick-bar.text-right { justify-content: space-between; } /* 兼容旧类 */
 .quick-bar > button { margin-left: auto; }
+.quick-bar > button + button { margin-left: 10px; }
+
+/* 当前登录用户徽章 */
+.user-badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f4d97a;
+  background: rgba(20, 30, 32, 0.7);
+  border: 1px solid var(--gold-400, rgba(212, 174, 55, 0.5));
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.user-badge::before {
+  content: "◆";
+  font-size: 10px;
+  color: #d4ae37;
+}
+.user-badge + button { margin-left: 10px; }
+.user-badge-room {
+  position: fixed;
+  top: 14px;
+  right: 24px;
+  z-index: 30;
+  margin-left: 0;
+}
 
 /* 桌位卡片 */
 .desk {

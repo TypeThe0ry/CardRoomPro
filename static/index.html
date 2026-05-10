@@ -47,6 +47,7 @@
     <!-- 大厅 -->
     <div class="full-screen house" v-if="where === 1">
       <div class="row text-right quick-bar">
+        <span v-if="myUser && myUser.username" class="user-badge" :title="'已用 Discuz 账号登录 (uid=' + myUser.uid + ')'">{{myUser.username}}</span>
         <button class="btn-ghost btn-mute" type="button" @click="toggleMute"
           :title="muted ? '开启音效' : '静音'">{{muted ? '♪ 静音' : '♪ 音效'}}</button>
         <button class="btn-ghost" type="button" @click="openStats">我的战绩</button>
@@ -66,6 +67,7 @@
     <!-- 房间 -->
     <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec}">
       <button class="btn-exit-room" @click="exitRoom">{{isSpec ? '退出观战' : '返回大厅'}}</button>
+      <span v-if="myUser && myUser.username" class="user-badge user-badge-room" :title="'已用 Discuz 账号登录 (uid=' + myUser.uid + ')'">{{myUser.username}}</span>
       <div v-if="isSpec" class="spec-badge">观 战 模 式</div>
 
       <!-- 累计记分板 -->
@@ -359,6 +361,8 @@
           discuzLoginUrl: 'https://zwwx.club/discuz-sso/bridge.php',
           // 我的战绩
           myScore: null,
+          // 当前登录用户信息（仅 SSO 自动登录时填充）
+          myUser: null,
           topList: [],
           posId: '',//座位号
           deskId: '',//桌号
@@ -457,6 +461,15 @@
           // 服务端推送的个人战绩
           this.client.on('MY_SCORE', function (row) {
             this.myScore = row || null;
+          }.bind(this));
+
+          // SSO 自动登录后服务端会推送 WHOAMI
+          this.client.on('WHOAMI', function (data) {
+            this.myUser = data || null;
+            // 预填自己的座位名，坐下后头像名称、聊天等都会用这个
+            if (data && data.username) {
+              this.posState.self.name = data.username;
+            }
           }.bind(this));
 
           this.client.on('LOGIN_FAIL', function (data) {
