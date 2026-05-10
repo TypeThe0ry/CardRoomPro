@@ -3,6 +3,11 @@
 // error_reporting(E_ALL);
 // ini_set('display_errors', '1');
 
+// 禁止 CF / 浏览器 / 反代缓存本响应（302 默认会被缓存导致死循环）
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 use Firebase\JWT\JWT;
 /**
  * Discuz → Doudizhu 跨域 SSO 桥接
@@ -31,8 +36,8 @@ $ALLOW_HOSTS = [
     'ddz.yutianfu.me',
     // 如果还有其它前端域名，加进来
 ];
-// JWT 有效期（秒）
-$JWT_TTL = 86400;
+// JWT 有效期（秒）—— 用 define 保护，避免 Discuz init 后变量被覆盖
+define('SSO_JWT_TTL', 86400);
 
 // ====== 先取 redirect 并校验（必须在 Discuz init 之前，Discuz 会对 $_GET 做 addslashes） ======
 $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
@@ -53,6 +58,8 @@ if (!isset($parts['scheme']) || !in_array($parts['scheme'], ['http', 'https'], t
     echo 'invalid scheme';
     exit;
 }
+// 用 define 把 redirect 锁起来，Discuz init 不会动到常量
+define('SSO_REDIRECT', $redirect);
 
 // ====== 引导 Discuz ======
 define('CURSCRIPT', 'index');
@@ -140,11 +147,12 @@ $payload = [
     'uid'      => $uid,
     'username' => strval($_G['member']['username']),
     'iat'      => $now,
-    'exp'      => $now + intval($JWT_TTL),
+    'exp'      => $now + SSO_JWT_TTL,
 ];
 $jwt = JWT::encode($payload, $SSO_SECRET, 'HS256');
 
 // 把 token 放到 fragment，避免被中间日志记录到 query
+$redirect = SSO_REDIRECT;
 $sep = (strpos($redirect, '#') === false) ? '#' : '&';
 $target = $redirect . $sep . 'token=' . rawurlencode($jwt);
 header('Location: ' . $target);
