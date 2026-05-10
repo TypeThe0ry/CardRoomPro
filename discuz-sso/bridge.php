@@ -116,7 +116,14 @@ if (!$uid) {
         echo ' cookiepath=' . htmlspecialchars($discuz->config['cookie']['cookiepath'] ?? '');
         exit;
     }
-    $self = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off' ? 'https' : 'http')
+    // 识别 CF / 反代下的 https，避免拼成 http:// 让 Discuz 登录后回跳掉协议
+    $isHttps = (
+        (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+        (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') ||
+        (isset($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') ||
+        (isset($_SERVER['HTTP_CF_VISITOR']) && strpos($_SERVER['HTTP_CF_VISITOR'], 'https') !== false)
+    );
+    $self = ($isHttps ? 'https' : 'http')
         . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']
         . (strpos($_SERVER['REQUEST_URI'], '?') === false ? '?' : '&') . '_after_login=1';
     // 用站点根的绝对路径，避免落到 /discuz-sso/member.php
