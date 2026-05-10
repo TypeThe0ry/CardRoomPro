@@ -25,10 +25,19 @@
         <template v-if="isAutoLogin">
           <div class="auto-login">正在使用 Discuz 登录，请稍候…</div>
         </template>
+        <template v-else-if="!guestMode">
+          <div class="login-form" style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+            <button @click="goDiscuzLogin">使用 Discuz 账号登录</button>
+            <button class="btn-ghost" @click="guestMode = true">以访客身份进入</button>
+          </div>
+        </template>
         <template v-else>
           <div class="login-form">
-            <input type="text" class="input" placeholder="请输入您的雅号" v-model.trim="posState.self.name" @keyup.enter="login"><button
+            <input type="text" class="input" placeholder="请输入您的雅号（访客）" v-model.trim="posState.self.name" @keyup.enter="login"><button
               @click="login">入  座</button>
+          </div>
+          <div class="row" style="margin-top:8px;text-align:center;">
+            <a href="javascript:;" @click="guestMode = false" style="color:#888;font-size:12px;">返回登录方式选择</a>
           </div>
         </template>
       </div>
@@ -322,6 +331,8 @@
 
           where: 0,//0登录界面 1大厅 2房间,
           isAutoLogin: false,
+          guestMode: false,// 选择以访客身份进入
+          discuzLoginUrl: '/member.php?mod=logging&action=login',
           posId: '',//座位号
           deskId: '',//桌号
           desks: [],
@@ -722,6 +733,13 @@
         }.bind(this));
       },
       methods: {
+        goDiscuzLogin: function () {
+          // 携带返回地址，登录完跳回游戏页
+          var back = encodeURIComponent(location.href);
+          var url = this.discuzLoginUrl;
+          url += (url.indexOf('?') >= 0 ? '&' : '?') + 'referer=' + back;
+          location.href = url;
+        },
         login: function () {
           if (!this.posState.self.name) {
             return layer.msg('请输入名字');
