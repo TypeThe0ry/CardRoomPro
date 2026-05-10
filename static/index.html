@@ -58,6 +58,17 @@
       <button class="btn-exit-room" @click="exitRoom">{{isSpec ? '退出观战' : '返回大厅'}}</button>
       <div v-if="isSpec" class="spec-badge">观 战 模 式</div>
 
+      <!-- 累计记分板 -->
+      <div class="score-board" v-if="scoreList.length">
+        <div class="score-board-title">本桌积分</div>
+        <div class="score-board-row" v-for="row in scoreList" :key="row.name">
+          <span class="score-board-name">{{row.name}}</span>
+          <span class="score-board-num" :class="{ pos: row.total > 0, neg: row.total < 0 }">
+            {{row.total > 0 ? '+' + row.total : row.total}}
+          </span>
+        </div>
+      </div>
+
       <div class="btn-group" v-if="!isSpec && roomState.state > 0 && roomState.state < 3 && roomState.ctxPos === 'self'">
         <span class="clock">{{roomState.timeout}}</span>
         <template v-if="roomState.state === 1">
@@ -305,6 +316,9 @@
           _msgSeq: 0,//本地消息序号兜底，避免 :key 冲突
           isSpec: false,//是否处于观战模式
           muted: false,//全局静音
+          scoreBoard: {},//本桌累计积分 { name: number }
+          scoreSeen: [],//本桌出现过的玩家名顺序，保证显示稳定
+          lastRoundDelta: null,//上一局的得分明细 [{name,delta}]
 
           where: 0,//0登录界面 1大厅 2房间,
           isAutoLogin: false,
@@ -616,10 +630,25 @@
             var msg = this.isSpec ? '本局结束' : (iWon ? '恭喜你，你赢了' : '很遗憾，你输了');
             var icon = (this.isSpec || iWon) ? 6 : 5;
 
+            // —— 计算每位玩家本局得分（标准斗地主：地主双倍）——
+            var unit = data.score * data.ratio; // 单倍分
+            var dizhuWon = data.winner.length === 1;
+            var dizhuId = dizhuWon ? data.winner[0] : data.loser[0];
+            var roundDelta = [];
+            [0, 1, 2].forEach(function (pid) {
+              var direct = this.getDirectionByPosId(pid);
+              var name = this.posState[direct] && this.posState[direct].name;
+              if (!name) return;
+              var delta;
+              if (pid === dizhuId) delta = (dizhuWon ? 1 : -1) * unit * 2;
+              else delta = (dizhuWon ? -1 : 1) * unit;
+              this.bumpScore(name, delta);
+              roundDelta.push({ name: name, delta: delta, isDizhu: pid === dizhuId });
+            }.bind(this));
+            this.lastRoundDelta = roundDelta;
 
             var content = '<div class="msg-title msg-' + (icon === 6 ? 'success' : 'fail') + '">' + msg + '</div><div>本局游戏统计如下：</div>';
             var score = data.score * data.ratio * 2;
-            var halfScore = score / 2;
             data.winner.forEach(function (id) {
               var direct = this.getDirectionByPosId(id);
               content += '<div>' + this.posState[direct].name + '：+' + (score / data.winner.length) + '分</div>';
@@ -628,6 +657,13 @@
               var direct = this.getDirectionByPosId(id);
               content += '<div>' + this.posState[direct].name + '：-' + (score / data.loser.length) + '分</div>';
             }.bind(this));
+
+            // —— 累计积分一览 ——
+            content += '<div class="go-board-title">本桌累计积分</div>';
+            this.scoreList.forEach(function (row) {
+              var sign = row.total > 0 ? '+' : '';
+              content += '<div class="go-board-row">' + row.name + ' <span class="go-board-num ' + (row.total >= 0 ? 'pos' : 'neg') + '">' + sign + row.total + '</span></div>';
+            });
 
 
             layer.open({
@@ -857,6 +893,14 @@
           this.posState.left.isBot = false;
           this.posState.right.isBot = false;
           this.posState.self.isBot = false;
+          this.scoreBoard = {};
+          this.scoreSeen = [];
+          this.lastRoundDelta = null;
+        },
+        bumpScore: function (name, delta) {
+          if (!name) return;
+          if (this.scoreSeen.indexOf(name) === -1) this.scoreSeen.push(name);
+          this.$set(this.scoreBoard, name, (this.scoreBoard[name] || 0) + delta);
         },
         getSelectdCards: function () {
           return this.posState.self.cards.filter(function (card) {
@@ -1029,6 +1073,12 @@
         // 是否有 AI 在场
         hasBotSeat: function () {
           return this.posState.left.isBot || this.posState.right.isBot;
+        },
+        // 记分板列表（按出现顺序）
+        scoreList: function () {
+          return this.scoreSeen.map(function (name) {
+            return { name: name, total: this.scoreBoard[name] || 0 };
+          }.bind(this));
         }
       }
     })

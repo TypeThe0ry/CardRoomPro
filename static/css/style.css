@@ -1068,6 +1068,81 @@ button.btn-ghost {
 .msg-success { color: var(--jade-300); text-shadow: 0 0 12px rgba(141,213,196,0.4); }
 .msg-fail    { color: var(--vermilion-400); text-shadow: 0 0 12px rgba(232,90,79,0.4); }
 
+/* GAME_OVER 弹窗内的累计积分块 */
+.go-board-title {
+  font-family: var(--font-brush);
+  font-size: 16px;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+  margin: 14px 0 6px;
+  border-top: 1px dashed rgba(208,168,92,0.4);
+  padding-top: 10px;
+}
+.go-board-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 2px 4px;
+  font-size: 14px;
+}
+.go-board-num { font-family: var(--font-brush); font-size: 16px; letter-spacing: 0.05em; }
+.go-board-num.pos { color: var(--gold); }
+.go-board-num.neg { color: var(--vermilion-400); }
+
+/* ---------- 房间内：本桌累计记分板 ---------- */
+.score-board {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 25;
+  min-width: 168px;
+  padding: 10px 14px 12px;
+  background: linear-gradient(180deg, rgba(14,36,34,0.92), rgba(8,22,20,0.94));
+  border: 1px solid rgba(208,168,92,0.45);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.4) inset,
+    0 6px 24px rgba(0,0,0,0.45),
+    0 0 16px rgba(141,213,196,0.12);
+  color: #d6e8df;
+  user-select: none;
+  pointer-events: none;
+}
+.score-board-title {
+  font-family: var(--font-brush);
+  font-size: 16px;
+  letter-spacing: 0.4em;
+  color: var(--gold);
+  text-align: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(208,168,92,0.35);
+}
+.score-board-row {
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 12px;
+  padding: 3px 2px;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+.score-board-name {
+  max-width: 110px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.score-board-num {
+  font-family: var(--font-brush);
+  font-size: 17px;
+  min-width: 44px;
+  text-align: right;
+  color: #d6e8df;
+}
+.score-board-num.pos { color: var(--gold); text-shadow: 0 0 8px rgba(208,168,92,0.5); }
+.score-board-num.neg { color: var(--vermilion-400); text-shadow: 0 0 8px rgba(232,90,79,0.4); }
+@media (max-width: 720px) {
+  .score-board { top: 8px; left: 8px; min-width: 138px; padding: 8px 10px; }
+  .score-board-title { font-size: 13px; letter-spacing: 0.25em; }
+  .score-board-row { font-size: 12px; }
+  .score-board-num { font-size: 14px; }
+}
+
 /* ---------- 滚动条 ---------- */
 .scroll-bar::-webkit-scrollbar { width: 6px; height: 6px; }
 .scroll-bar::-webkit-scrollbar-track { background: transparent; }
