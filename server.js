@@ -420,26 +420,58 @@ const proto = {
     this.scheduleBotAction(deskId);
   },
   init() {
+    // 启动期完整性自检
+    if (this.JWT_SECRET === 'change_this_in_production') {
+      console.warn('[WARN] JWT_SECRET 使用默认占位值，跨域 SSO token 必然校验失败。请在启动 node 进程时设置 JWT_SECRET 环境变量，并与论坛侧 DISCUZ_SSO_SECRET 保持一致。');
+    }
+    try { require.resolve('jsonwebtoken'); }
+    catch (e) { console.error('[FATAL] 缺少 jsonwebtoken 依赖，请运行 npm install jsonwebtoken'); }
+
     // socket.io middleware: verify JWT token if provided during handshake
     io.use((socket, next) => {
       const token = (socket.handshake && (socket.handshake.auth && socket.handshake.auth.token)) || (socket.handshake && socket.handshake.query && socket.handshake.query.token);
       if (!token) return next();
-      const jwt = require('jsonwebtoken');
+      let jwt;
+      try { jwt = require('jsonwebtoken'); }
+      catch (e) {
+        socket.tokenError = '服务器未安装 jsonwebtoken 模块';
+        return next();
+      }
       try {
         const payload = jwt.verify(token, this.JWT_SECRET);
-        socket.user = { uid: payload.uid, username: payload.username };
+        if (!payload || !payload.uid) {
+          socket.tokenError = 'token 缺少 uid';
+        } else {
+          socket.user = { uid: payload.uid, username: payload.username };
+        }
       } catch (err) {
-        console.warn('JWT verify failed:', err && err.message);
-        // continue as guest
+        const msg = err && err.message || 'unknown';
+        console.warn('JWT verify failed:', msg);
+        // 把可读原因翻译给前端
+        if (err && err.name === 'TokenExpiredError') socket.tokenError = '登录态已过期，请重新登录';
+        else if (err && err.name === 'JsonWebTokenError') socket.tokenError = '登录凭证无效（签名不匹配，请检查服务器 JWT_SECRET）';
+        else socket.tokenError = '登录凭证校验失败：' + msg;
       }
       return next();
     });
 
     io.on('connection', function (socket) {
       console.log('有客户端接入，时间： %s', time());
+      // 校验失败 → 立刻通知前端，避免它卡在"正在登录…"
+      if (socket.tokenError) {
+        socket.emit('LOGIN_FAIL', { msg: socket.tokenError, code: 'TOKEN_INVALID' });
+      }
       // if socket was authenticated via token, auto-register client
       if (socket.user) {
         try {
+          // 同名旧连接踢掉（页面刷新/双开），避免 checkUserName 死锁
+          for (let i = this.clients.length - 1; i >= 0; i--) {
+            const c = this.clients[i];
+            if (c.userName === socket.user.username && c.socket !== socket) {
+              try { c.socket.emit('FORCE_LOGOUT', { msg: '账号在别处登录' }); c.socket.disconnect(true); } catch (e) {}
+              this.clients.splice(i, 1);
+            }
+          }
           this.addClient(socket, { userName: socket.user.username, uid: socket.user.uid });
           socket.emit('WHOAMI', { uid: socket.user.uid, username: socket.user.username });
           socket.emit('LOGIN_SUCCESS', this.desks);
