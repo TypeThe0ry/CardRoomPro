@@ -449,16 +449,21 @@
           if (_token) {
             this.isAutoLogin = true;
             // fallback to manual login if token doesn't produce LOGIN_SUCCESS quickly
-            setTimeout(function () {
-              if (this.where === 0) {
-                this.isAutoLogin = false;
-                // token 可能过期，清掉避免下次仍然卡住
-                try { localStorage.removeItem('discuz_token'); } catch (e) {}
+            this._autoLoginTimer = setTimeout(function () {
+              if (this.where === 0 && this.isAutoLogin) {
+                this.cancelAutoLogin('登录超时，请重试或改用其他方式');
               }
             }.bind(this), 5000);
           }
 
           this.client = createClient(location.host);
+
+          // socket 连接失败：避免无限"正在登录…"
+          this.client.on('connect_error', function (err) {
+            if (this.isAutoLogin) {
+              this.cancelAutoLogin('网络异常：' + (err && err.message ? err.message : '无法连接服务器'));
+            }
+          }.bind(this));
 
           this.client.on('MESSAGE', function (data) {
             layer.msg(data.msg);
@@ -468,6 +473,8 @@
           this.client.on('LOGIN_SUCCESS', function (data) {
             this.desks = data;
             this.where = 1;
+            this.isAutoLogin = false;
+            if (this._autoLoginTimer) { clearTimeout(this._autoLoginTimer); this._autoLoginTimer = null; }
             layer.closeAll();
           }.bind(this));
 
@@ -487,7 +494,11 @@
 
           this.client.on('LOGIN_FAIL', function (data) {
             layer.closeAll();
-            layer.msg(data.msg);
+            if (this.isAutoLogin) {
+              this.cancelAutoLogin(data && data.msg ? data.msg : '自动登录失败');
+            } else {
+              layer.msg(data.msg);
+            }
           }.bind(this));
 
           this.client.on('QUICK_JOIN', function (data) {
@@ -885,6 +896,15 @@
           var url = this.discuzLoginUrl;
           url += (url.indexOf('?') >= 0 ? '&' : '?') + 'redirect=' + encodeURIComponent(back);
           location.href = url;
+        },
+        cancelAutoLogin: function (msg) {
+          // 退出自动登录流程：清掉可能过期的 token + 让用户重新选择
+          this.isAutoLogin = false;
+          if (this._autoLoginTimer) { clearTimeout(this._autoLoginTimer); this._autoLoginTimer = null; }
+          try { localStorage.removeItem('discuz_token'); } catch (e) {}
+          // 清掉 cookie 兜底
+          try { document.cookie = 'discuz_token=; path=/; max-age=0'; } catch (e) {}
+          if (msg) layer.msg(msg, { time: 2500 });
         },
         login: function () {
           if (!this.posState.self.name) {
