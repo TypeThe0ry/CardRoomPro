@@ -54,6 +54,7 @@ app.get('/', function (req, res) {
   res.sendFile(`${__dirname}/index.html`);
 });
 const Game = require('./game.js');
+const GuandanGame = require('./guandan-game.js');
 const AISuggest = require('./static/js/ai-suggest.js').AISuggest;
 const db = require('./db.js');
 
@@ -140,25 +141,133 @@ app.all(/^\/api(\/.*)?$/, (req, res) => {
 });
 
 const BOT_NAMES = ['玉狐', '青龙', '白鹭', '墨鸢', '朱雀', '碧波', '苍髯'];
-function createDeskList(n) {
-  n = n || 50;
-  const ret = [];
-  for (let i = 1; i <= n; i++) {
-    const desk = {
-      deskId: i,
-      state: 0,
-      positions: []
-    }
-    for (let j = 0; j < 3; j++) {
-      desk.positions.push({
+const GAME_TYPES = {
+  doudizhu: { label: '斗地主', seats: 3 },
+  guandan: { label: '掼蛋', seats: 4 },
+};
+
+function normalizeGameType(gameType) {
+  return GAME_TYPES[gameType] ? gameType : 'doudizhu';
+}
+
+function createPositions(count) {
+  const positions = [];
+  for (let j = 0; j < count; j++) {
+      positions.push({
         posId: j,
         state: 0,
-        userName: ''
-      })
-    }
-    ret.push(desk);
+        userName: '',
+        avatarUrl: '',
+        isBot: false,
+        pendingSocketId: '',
+      });
   }
-  return ret;
+  return positions;
+}
+
+function roomCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function rankLabel(value) {
+  if (value === 11) return 'J';
+  if (value === 12) return 'Q';
+  if (value === 13) return 'K';
+  if (value === 14) return 'A';
+  if (value === 15) return '2';
+  return String(value);
+}
+
+function advanceRank(value, delta) {
+  const order = [15, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
+  const idx = Math.max(0, order.indexOf(value));
+  return order[Math.min(order.length - 1, idx + delta)];
+}
+
+function discuzAvatarUrl(uid) {
+  if (!uid) return '';
+  const base = String(process.env.DISCUZ_AVATAR_BASE || 'https://zwwx.club/uc_server/avatar.php?uid={uid}&size=middle');
+  if (!base) return '';
+  if (base.indexOf('{uid}') >= 0) return base.replace(/\{uid\}/g, encodeURIComponent(uid));
+  return base + (base.indexOf('?') >= 0 ? '&' : '?') + 'uid=' + encodeURIComponent(uid) + '&size=middle';
+}
+
+function sortByCard(cards) {
+  return cards.slice(0).sort((a, b) => {
+    if (a.value !== b.value) return a.value - b.value;
+    if (a.type !== b.type) return a.type - b.type;
+    return (a.deck || 0) - (b.deck || 0);
+  });
+}
+
+function groupCardsByValue(cards) {
+  const groups = {};
+  cards.forEach(card => {
+    if (!groups[card.value]) groups[card.value] = [];
+    groups[card.value].push(card);
+  });
+  Object.keys(groups).forEach(k => { groups[k] = sortByCard(groups[k]); });
+  return groups;
+}
+
+function pushCandidate(candidates, game, posId, cards) {
+  if (!cards || !cards.length) return;
+  const ret = game.validate(posId, cards);
+  if (ret && ret.status) {
+    candidates.push({ cards: cards.slice(0), ret });
+  }
+}
+
+function getGuandanCandidates(game, posId, leadOnly) {
+  const hand = sortByCard((game.getCardsByPosId(posId) || []).slice(0));
+  const groups = groupCardsByValue(hand);
+  const values = Object.keys(groups).map(Number).sort((a, b) => a - b);
+  const candidates = [];
+
+  values.forEach(v => pushCandidate(candidates, game, posId, [groups[v][0]]));
+  values.forEach(v => { if (groups[v].length >= 2) pushCandidate(candidates, game, posId, groups[v].slice(0, 2)); });
+  values.forEach(v => { if (groups[v].length >= 3) pushCandidate(candidates, game, posId, groups[v].slice(0, 3)); });
+
+  values.forEach(tv => {
+    if (groups[tv].length < 3) return;
+    values.forEach(pv => {
+      if (pv === tv || groups[pv].length < 2) return;
+      pushCandidate(candidates, game, posId, groups[tv].slice(0, 3).concat(groups[pv].slice(0, 2)));
+    });
+  });
+
+  for (let start = 3; start <= 10; start++) {
+    const seq = [];
+    for (let v = start; v < start + 5; v++) {
+      if (groups[v] && groups[v].length) seq.push(groups[v][0]);
+    }
+    if (seq.length === 5) pushCandidate(candidates, game, posId, seq);
+  }
+
+  for (let start = 3; start <= 12; start++) {
+    const pairs = [];
+    for (let v = start; v < start + 3; v++) {
+      if (groups[v] && groups[v].length >= 2) pairs.push(...groups[v].slice(0, 2));
+    }
+    if (pairs.length === 6) pushCandidate(candidates, game, posId, pairs);
+  }
+
+  values.forEach(v => {
+    if (groups[v].length >= 4) pushCandidate(candidates, game, posId, groups[v].slice(0, 4));
+  });
+
+  const jokers = hand.filter(c => c.value >= 16);
+  if (jokers.length >= 4) pushCandidate(candidates, game, posId, jokers.slice(0, 4));
+
+  return candidates
+    .filter(item => leadOnly || item.ret.len)
+    .sort((a, b) => {
+      const bombA = a.ret.bomb ? 1 : 0;
+      const bombB = b.ret.bomb ? 1 : 0;
+      if (bombA !== bombB) return bombA - bombB;
+      if (a.cards.length !== b.cards.length) return a.cards.length - b.cards.length;
+      return (a.ret.key || 0) - (b.ret.key || 0);
+    });
 }
 
 function time() {
@@ -177,9 +286,10 @@ var guid = function () {
 function GameServer(port) {
   this.clients = [];
   this.port = port;
-  this.desks = createDeskList(20);
+  this.desks = [];
   this.gameDatas = {};
   this.botTimers = {};
+  this.nextRoomId = 1;
 }
 const proto = {
   // JWT secret used to validate tokens issued by Discuz (or other auth provider)
@@ -205,6 +315,104 @@ const proto = {
       }
     });
   },
+  refreshLobby(socket) {
+    const list = this.getLobbyRooms();
+    if (socket) {
+      socket.emit('REFRESH_LIST', list);
+      return;
+    }
+    this.broadCastHouse('REFRESH_LIST', list);
+  },
+  createRoom(options) {
+    options = options || {};
+    const gameType = normalizeGameType(options.gameType);
+    const meta = GAME_TYPES[gameType];
+    let code = roomCode();
+    while (this.desks.some(room => room.roomCode === code)) code = roomCode();
+    const room = {
+      deskId: this.nextRoomId++,
+      roomId: '',
+      roomCode: code,
+      state: 0,
+      gameType,
+      gameLabel: meta.label,
+      seatCount: meta.seats,
+      isPrivate: !!options.isPrivate,
+      ownerName: options.ownerName || '',
+      createdAt: Date.now(),
+      positions: createPositions(meta.seats),
+      guandanLevelRank: 15,
+      guandanLevelLabel: '2',
+    };
+    room.roomId = room.deskId;
+    this.desks.push(room);
+    return room;
+  },
+  getLobbyRooms() {
+    return this.desks
+      .filter(room => !room.isPrivate)
+      .map(room => ({
+        deskId: room.deskId,
+        roomId: room.roomId,
+        roomCode: room.roomCode,
+        state: room.state,
+        gameType: room.gameType,
+        gameLabel: room.gameLabel,
+        seatCount: room.seatCount,
+        isPrivate: room.isPrivate,
+        ownerName: room.ownerName,
+        guandanLevelLabel: room.guandanLevelLabel,
+        positions: room.positions.map(p => ({
+          posId: p.posId,
+          state: p.state,
+          userName: p.userName,
+          avatarUrl: p.avatarUrl || '',
+          isBot: !!p.isBot,
+        })),
+      }));
+  },
+  findRoomByCode(code) {
+    code = String(code || '').trim();
+    return this.desks.find(room => room.roomCode === code || String(room.deskId) === code) || null;
+  },
+  getFirstOpenPos(room) {
+    if (!room) return null;
+    return room.positions.find(pos => pos.state === 0 && !pos.pendingSocketId) || null;
+  },
+  reservePosition(room, posId, socket) {
+    if (!room || !socket) return;
+    const pos = this.getPosition(room, posId);
+    if (!pos || pos.state !== 0) return;
+    pos.pendingSocketId = socket.id;
+    setTimeout(() => {
+      if (pos.pendingSocketId === socket.id && pos.state === 0) {
+        pos.pendingSocketId = '';
+      }
+    }, 5000);
+  },
+  cleanupRoomIfEmpty(deskId) {
+    const room = this.getDesk(deskId);
+    if (!room) return;
+    const hasHuman = this.clients.some(c => c.deskId === deskId && c.posId !== 'spec');
+    if (hasHuman) return;
+    this.removeAllBots(deskId);
+    this.clearBotTimer(deskId);
+    if (this.gameDatas[deskId]) {
+      this.gameDatas[deskId].init();
+      delete this.gameDatas[deskId];
+    }
+    const index = this.desks.findIndex(r => r.deskId === deskId);
+    if (index >= 0) this.desks.splice(index, 1);
+    this.refreshLobby();
+  },
+  applyGuandanResult(deskId, result) {
+    const room = this.getDesk(deskId);
+    if (!room || room.gameType !== 'guandan' || !result) return;
+    room.guandanLevelRank = advanceRank(room.guandanLevelRank || 15, result.rankDelta || 1);
+    room.guandanLevelLabel = rankLabel(room.guandanLevelRank);
+    result.nextLevelRank = room.guandanLevelRank;
+    result.nextLevelLabel = room.guandanLevelLabel;
+  },
   broadCastRoom(event, deskId, data, socket) {
     socket = socket === undefined ? null : socket;
 
@@ -217,7 +425,7 @@ const proto = {
   getDesk(deskId) {
     for (let i = 0, len = this.desks.length; i < len; i++) {
       let desk = this.desks[i];
-      if (desk.deskId == deskId) {
+      if (desk.deskId == deskId || desk.roomCode == deskId) {
         return desk;
       }
     }
@@ -262,7 +470,7 @@ const proto = {
     const position = this.getPosition(desk, posId);
     return position && position.state === 0;
   },
-  updatePosStatus(deskId, posId, state, userName) {
+  updatePosStatus(deskId, posId, state, userName, avatarUrl) {
     const desk = this.getDesk(deskId);
     if (desk) {
       const position = this.getPosition(desk, posId);
@@ -270,6 +478,12 @@ const proto = {
         position.state = state;
         if (userName === '' || userName) {
           position.userName = userName;
+        }
+        if (avatarUrl === '' || avatarUrl) {
+          position.avatarUrl = avatarUrl;
+        }
+        if (state === 0) {
+          position.avatarUrl = '';
         }
       }
     }
@@ -291,7 +505,7 @@ const proto = {
     }
   },
   addClient(socket, data) {
-    this.clients.push({ userName: data.userName, uid: data.uid || 0, socket: socket, deskId: '', posId: '' });
+    this.clients.push({ userName: data.userName, uid: data.uid || 0, avatarUrl: data.avatarUrl || '', socket: socket, deskId: '', posId: '' });
   },
   getClient(socket) {
     for (let i = 0, len = this.clients.length; i < len; i++) {
@@ -317,6 +531,14 @@ const proto = {
     }
     return null;
   },
+  getUserAvatar(socket) {
+    for (let i = 0, len = this.clients.length; i < len; i++) {
+      if (this.clients[i].socket == socket) {
+        return this.clients[i].avatarUrl || '';
+      }
+    }
+    return '';
+  },
   checkUserName(userName) {
     for (let i = 0, len = this.clients.length; i < len; i++) {
       if (this.clients[i].userName === userName) {
@@ -329,7 +551,7 @@ const proto = {
     const desk = this.getDesk(deskId);
     if (desk) {
       const positions = desk.positions;
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < positions.length; i++) {
         if (positions[i].state !== 2) {
           return false;
         }
@@ -339,15 +561,39 @@ const proto = {
     return false;
   },
   startGame(deskId) {
+    const room = this.getDesk(deskId);
+    if (!room) return;
     if (this.gameDatas[deskId] === undefined) {
-      this.gameDatas[deskId] = new Game();
+      this.gameDatas[deskId] = room.gameType === 'guandan'
+        ? new GuandanGame({ levelRank: room.guandanLevelRank || 15 })
+        : new Game();
     }
     const game = this.gameDatas[deskId];
     game.init();
     const cards = game.start().getCards();
-    this.broadCastRoom('GAME_START', deskId, { cards });
-    this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos: game.getContextPosId(), ctxScore: game.getContextScore(), timeout: 15 });
-    this.scheduleBotAction(deskId);
+    this.updateRoomStatus(deskId, 2);
+    this.refreshLobby();
+    if (room.gameType === 'guandan') {
+      this.broadCastRoom('GAME_START', deskId, {
+        cards,
+        gameType: room.gameType,
+        ctxPos: game.getContextPosId(),
+        levelLabel: game.getLevelLabel(),
+        levelRank: game.levelRank,
+      });
+      this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
+        ctxData: { len: 0, key: '', type: '', cards: [], posId: game.getContextPosId() },
+        posId: game.getContextPosId(),
+        timeout: 30,
+        isPass: false,
+        trickReset: true,
+      });
+      this.scheduleBotAction(deskId);
+    } else {
+      this.broadCastRoom('GAME_START', deskId, { cards, gameType: room.gameType });
+      this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos: game.getContextPosId(), ctxScore: game.getContextScore(), timeout: 15 });
+      this.scheduleBotAction(deskId);
+    }
   },
   // ===== AI 机器人 =====
   hasHumanAtDesk(deskId) {
@@ -358,10 +604,10 @@ const proto = {
     if (!desk) return;
     const pos = this.getPosition(desk, posId);
     if (!pos) return;
-    const used = desk.positions.map(x => x.userName).filter(Boolean);
+    const used = desk.positions.map(x => String(x.userName || '').replace(/\s*〔AI〕$/, '')).filter(Boolean);
     const name = (BOT_NAMES.find(n => !used.includes(n)) || '清客') + ' 〔AI〕';
-    pos.state = 2; pos.userName = name; pos.isBot = true;
-    this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId, state: 2, userName: name, isBot: true });
+    pos.state = 2; pos.userName = name; pos.avatarUrl = ''; pos.isBot = true;
+    this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId, state: 2, userName: name, avatarUrl: '', isBot: true });
     this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 2 });
   },
   removeBot(deskId, posId) {
@@ -370,8 +616,8 @@ const proto = {
     const pos = this.getPosition(desk, posId);
     if (!pos || !pos.isBot) return null;
     const name = pos.userName;
-    pos.state = 0; pos.userName = ''; pos.isBot = false;
-    this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId, state: 0, userName: '' });
+    pos.state = 0; pos.userName = ''; pos.avatarUrl = ''; pos.isBot = false;
+    this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId, state: 0, userName: '', avatarUrl: '' });
     this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
     return name;
   },
@@ -392,7 +638,7 @@ const proto = {
     desk.positions.forEach(p => {
       if (p.isBot) {
         p.state = 2;
-        this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId: p.posId, state: 2, userName: p.userName });
+        this.broadCastRoom('POS_STATUS_CHANGE', deskId, { posId: p.posId, state: 2, userName: p.userName, avatarUrl: p.avatarUrl || '', isBot: !!p.isBot });
       }
     });
     // 若房间内全员（含真人）已就绪则自动开新一局
@@ -405,6 +651,7 @@ const proto = {
     if (!result || !db.isReady()) return;
     const desk = this.getDesk(deskId);
     if (!desk) return;
+    if (desk.gameType !== 'doudizhu') return;
     // 判断地主 posId： winner/loser 中只含 1 人的那边
     const landlordPosId = result.winner.length === 1 ? result.winner[0] : result.loser[0];
     const base = (Number(result.score) || 1) * (Number(result.ratio) || 1) * SCORE_BASE;
@@ -433,10 +680,13 @@ const proto = {
   },
   scheduleBotAction(deskId) {
     this.clearBotTimer(deskId);
+    const room = this.getDesk(deskId);
+    if (!room) return;
     const game = this.gameDatas[deskId];
     if (!game) return;
     const status = game.getStatus();
-    if (status !== 1 && status !== 2) return;
+    if (room.gameType === 'doudizhu' && status !== 1 && status !== 2) return;
+    if (room.gameType === 'guandan' && status !== 2) return;
     const posId = game.getContextPosId();
     if (!this.isBotPos(deskId, posId)) return;
     const delay = 900 + Math.floor(Math.random() * 1100);
@@ -445,7 +695,9 @@ const proto = {
       if (!this.isBotPos(deskId, posId)) return;
       const g = this.gameDatas[deskId];
       if (!g) return;
-      if (g.getStatus() === 1 && g.getContextPosId() === posId) {
+      if (room.gameType === 'guandan' && g.getStatus() === 2 && g.getContextPosId() === posId) {
+        this.botPlayGuandanCard(deskId, posId);
+      } else if (g.getStatus() === 1 && g.getContextPosId() === posId) {
         this.botCallScore(deskId, posId);
       } else if (g.getStatus() === 2 && g.getContextPosId() === posId) {
         this.botPlayCard(deskId, posId);
@@ -538,6 +790,61 @@ const proto = {
     }
     this.scheduleBotAction(deskId);
   },
+  botPlayGuandanCard(deskId, posId) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game) return;
+    const handRaw = (game.getCardsByPosId(posId) || []).slice(0);
+    const last = game.lastCardInfo || {};
+    const lead = !last.len || Number(last.posId) === Number(posId);
+    let candidates = [];
+    try {
+      candidates = getGuandanCandidates(game, posId, lead);
+    } catch (e) {
+      candidates = [];
+    }
+
+    let choice = candidates[0] || null;
+    let data = choice ? choice.cards : [];
+    let isPass = !data.length;
+    let ret = choice ? choice.ret : game.validate(posId, []);
+
+    if (!choice && lead && handRaw.length) {
+      data = [sortByCard(handRaw)[0]];
+      ret = game.validate(posId, data);
+      isPass = false;
+    }
+    if (!ret || !ret.status) {
+      data = [];
+      isPass = true;
+      ret = game.validate(posId, []);
+    }
+    if (!ret || !ret.status) return;
+
+    game.next(posId, data);
+    const trickReset = !!(game.lastCardInfo && !game.lastCardInfo.len);
+    this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
+      ctxData: { len: data.length, key: ret.key, type: ret.type, cards: data, posId },
+      posId: game.getContextPosId(),
+      timeout: 15,
+      isPass,
+      trickReset,
+    });
+
+    if (game.getStatus() === 3) {
+      const result = game.getResult();
+      this.applyGuandanResult(deskId, result);
+      this.broadCastRoom('GAME_OVER', deskId, result);
+      room.positions.forEach(p => this.updatePosStatus(deskId, p.posId, 1));
+      this.updateRoomStatus(deskId, 3);
+      game.init();
+      this.clearBotTimer(deskId);
+      this.rePrepareBots(deskId);
+      this.refreshLobby();
+      return;
+    }
+    this.scheduleBotAction(deskId);
+  },
   init() {
     // 启动期完整性自检
     if (this.JWT_SECRET === 'change_this_in_production') {
@@ -561,7 +868,11 @@ const proto = {
         if (!payload || !payload.uid) {
           socket.tokenError = 'token 缺少 uid';
         } else {
-          socket.user = { uid: payload.uid, username: payload.username };
+          socket.user = {
+            uid: payload.uid,
+            username: payload.username,
+            avatarUrl: payload.avatarUrl || payload.avatar || payload.avatar_url || discuzAvatarUrl(payload.uid),
+          };
         }
       } catch (err) {
         const msg = err && err.message || 'unknown';
@@ -591,9 +902,9 @@ const proto = {
               this.clients.splice(i, 1);
             }
           }
-          this.addClient(socket, { userName: socket.user.username, uid: socket.user.uid });
-          socket.emit('WHOAMI', { uid: socket.user.uid, username: socket.user.username });
-          socket.emit('LOGIN_SUCCESS', this.desks);
+          this.addClient(socket, { userName: socket.user.username, uid: socket.user.uid, avatarUrl: socket.user.avatarUrl });
+          socket.emit('WHOAMI', { uid: socket.user.uid, username: socket.user.username, avatarUrl: socket.user.avatarUrl });
+          socket.emit('LOGIN_SUCCESS', this.getLobbyRooms());
           console.log('已通过 token 自动登录用户：%s (uid=%s)', socket.user.username, socket.user.uid);
           // 推送一次该用户的积分
           db.getUserScore(socket.user.uid).then(row => { if (row) socket.emit('MY_SCORE', row); }).catch(() => {});
@@ -604,17 +915,54 @@ const proto = {
       socket.on('LOGIN', userName => {
         if (this.checkUserName(userName)) {
           this.addClient(socket, { userName });
-          socket.emit('LOGIN_SUCCESS', this.desks);
+          socket.emit('LOGIN_SUCCESS', this.getLobbyRooms());
           console.log('有客户端登录，时间： %s', time());
         } else {
           socket.emit('LOGIN_FAIL', { msg: '该用户名已存在' });
         }
       });
 
+      socket.on('CREATE_ROOM', data => {
+        const client = this.getClient(socket);
+        if (!client || client.deskId) return;
+        const room = this.createRoom({
+          gameType: data && data.gameType,
+          isPrivate: !!(data && data.isPrivate),
+          ownerName: this.getUserName(socket),
+        });
+        this.refreshLobby();
+        socket.emit('ROOM_CREATED', {
+          deskId: room.deskId,
+          roomCode: room.roomCode,
+          gameType: room.gameType,
+          isPrivate: room.isPrivate,
+        });
+        this.reservePosition(room, 0, socket);
+        socket.emit('QUICK_JOIN', { deskId: room.deskId, posId: 0, success: true });
+      });
+
+      socket.on('JOIN_ROOM', data => {
+        const client = this.getClient(socket);
+        if (!client || client.deskId) return;
+        const room = this.findRoomByCode(data && data.roomCode);
+        if (!room) {
+          socket.emit('SITDOWN_ERROR', { msg: '房间不存在' });
+          return;
+        }
+        const pos = this.getFirstOpenPos(room);
+        if (!pos) {
+          socket.emit('SITDOWN_ERROR', { msg: '房间已满' });
+          return;
+        }
+        this.reservePosition(room, pos.posId, socket);
+        socket.emit('QUICK_JOIN', { deskId: room.deskId, posId: pos.posId, success: true });
+      });
+
       //快速加入
-      socket.on('QUICK_JOIN', () => {
+      socket.on('QUICK_JOIN', data => {
+        const gameType = normalizeGameType(data && data.gameType);
         var ret = [];
-        this.desks.forEach(desk => {
+        this.desks.filter(room => !room.isPrivate && room.gameType === gameType).forEach(desk => {
           let n = 0;
           let item = {
             deskId: desk.deskId,
@@ -624,20 +972,33 @@ const proto = {
           positions.forEach(pos => {
             if (pos.state > 0) {
               n++;
-            } else {
+            } else if (!pos.pendingSocketId) {
               item.positions.push(pos.posId)
             }
           });
-          if (n <= 2) {
+          if (item.positions.length > 0) {
             ret.push(item);
           }
         });
         ret = ret.sort((a, b) => {
           return a.positions.length - b.positions.length;
         });
-        const matched = ret.length ? ret[0] : false;
-        const data = matched ? { deskId: matched.deskId, posId: matched.positions[0], success: true } : { success: false }
-        socket.emit('QUICK_JOIN', data)
+        let matched = ret.length ? ret[0] : false;
+        if (!matched) {
+          const room = this.createRoom({
+            gameType,
+            isPrivate: false,
+            ownerName: this.getUserName(socket),
+          });
+          this.refreshLobby();
+          matched = { deskId: room.deskId, positions: [0] };
+        }
+        if (matched && matched.positions && matched.positions.length) {
+          const room = this.getDesk(matched.deskId);
+          this.reservePosition(room, matched.positions[0], socket);
+        }
+        const payload = matched ? { deskId: matched.deskId, posId: matched.positions[0], success: true } : { success: false }
+        socket.emit('QUICK_JOIN', payload)
 
       });
 
@@ -651,8 +1012,10 @@ const proto = {
         const pos = desk && this.getPosition(desk, posId);
         const game = this.gameDatas[deskId];
         const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
-        const canTake = pos && (pos.state === 0 || (pos.isBot && !inProgress));
+        const reservedForMe = pos && (!pos.pendingSocketId || pos.pendingSocketId === socket.id);
+        const canTake = pos && ((pos.state === 0 && reservedForMe) || (pos.isBot && !inProgress));
         if (canTake) {
+          pos.pendingSocketId = '';
           if (pos.isBot) {
             const oldName = pos.userName;
             this.removeBot(deskId, posId);
@@ -660,18 +1023,30 @@ const proto = {
           }
           console.log('有客户端进入房间，桌号：%s，座位：%s，时间： %s', deskId, posId, time());
           //更新座位状态为占用
-          this.updatePosStatus(deskId, posId, 1, this.getUserName(socket));
+          const avatarUrl = this.getUserAvatar(socket);
+          this.updatePosStatus(deskId, posId, 1, this.getUserName(socket), avatarUrl);
           //绑定客户端桌号，座位号
           this.updateClientState(socket, deskId, posId);
           //获取除当前房间其它座位信息
           let posInfos = this.getOtherPosInfo(deskId, posId);
           //通知该客户端坐下成功 并发送当前房间的信息给该客户端
-          socket.emit('SITDOWN_SUCCESS', { ...data, posInfos });
+          socket.emit('SITDOWN_SUCCESS', {
+            ...data,
+            roomCode: desk.roomCode,
+            gameType: desk.gameType,
+            gameLabel: desk.gameLabel,
+            seatCount: desk.seatCount,
+            isPrivate: desk.isPrivate,
+            guandanLevelLabel: desk.guandanLevelLabel,
+            positions: desk.positions,
+            posInfos
+          });
           //通知在大厅游览的所有客户端当前坐位已被占用
           this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 1 });
+          this.refreshLobby();
 
           //通知在房间里的其它客户端，更新座位息
-          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 1, userName: this.getUserName(socket) }, socket);
+          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 1, userName: this.getUserName(socket), avatarUrl }, socket);
 
           //推送一条无关紧要的消息
           socket.emit('USER_MESSAGE', { type: 'SYS', posId, msg: '欢迎您加入本房间，祝您游戏愉快！', id: guid(), time: time() });
@@ -680,7 +1055,7 @@ const proto = {
           //通知该客户端此座位被人占用
           socket.emit('SITDOWN_ERROR', { msg: '该位置已有人' });
           //由于当前位置被占用可能是由于该客户端数据不同步造成，所以再次向该客户端推送一次所有桌数据
-          socket.emit('REFRESH_LIST', this.desks);
+          socket.emit('REFRESH_LIST', this.getLobbyRooms());
         }
       });
 
@@ -696,18 +1071,18 @@ const proto = {
         // 观战者走专用退出逻辑
         if (posId === 'spec') {
           this.updateClientState(socket);
-          socket.emit('UNSITDOWN_SUCCESS', this.desks);
+          socket.emit('UNSITDOWN_SUCCESS', this.getLobbyRooms());
           return;
         }
         console.log('有客户端退出房间，桌号：%s，座位：%s，时间：', deskId, posId, time());
         //更新座位状态
         this.updatePosStatus(deskId, posId, 0, '');
         //重置房间状态
-        this.updateRoomStatus(deskId, posId, 0);
+        this.updateRoomStatus(deskId, 0);
         //解绑座位号 桌号
         this.updateClientState(socket);
         //通知在房间里的其它客户端，更新座位息
-        this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 0 }, socket);
+        this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 0, userName: '', avatarUrl: '' }, socket);
         //通知大厅其它客户端更新该座位信息
         this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
 
@@ -734,7 +1109,7 @@ const proto = {
           }
         }
         //通知当前玩家退出房间成功
-        socket.emit('UNSITDOWN_SUCCESS', this.desks);
+        socket.emit('UNSITDOWN_SUCCESS', this.getLobbyRooms());
 
 
         //推送一条无关紧要的消息
@@ -742,9 +1117,9 @@ const proto = {
 
         // 若该桌已无真人，则清退所有 AI、清掉计时器、重置 game
         if (!this.hasHumanAtDesk(deskId)) {
-          this.removeAllBots(deskId);
-          this.clearBotTimer(deskId);
-          if (this.gameDatas[deskId]) this.gameDatas[deskId].init();
+          this.cleanupRoomIfEmpty(deskId);
+        } else {
+          this.refreshLobby();
         }
       });
 
@@ -766,6 +1141,7 @@ const proto = {
 
         //更新房间状态
         this.updateRoomStatus(deskId, 1);
+        this.refreshLobby();
 
         //检查是否全部准备完毕
         const isPrepareAll = this.checkPrepareAll(deskId);
@@ -829,12 +1205,15 @@ const proto = {
         }
         const { deskId, posId } = client;
         const game = this.gameDatas[deskId];
+        const room = this.getDesk(deskId);
         if (game && deskId) {
           const ret = game.validate(posId, data);
           const isPass = !data.length;
           const { status } = ret;
-          if (status || !data.length) {
+          const allowMove = status || (isPass && (!room || room.gameType === 'doudizhu'));
+          if (allowMove) {
             game.next(posId, data);
+            const trickReset = !!(room && room.gameType === 'guandan' && game.lastCardInfo && !game.lastCardInfo.len);
             this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
               ctxData: {
                 len: data.length,
@@ -845,19 +1224,26 @@ const proto = {
               },
               posId: game.getContextPosId(),
               timeout: 15,
-              isPass
+              isPass,
+              trickReset,
             })
             socket.emit('PLAY_CARD_SUCCESS', data)
             if (game.getStatus() === 3) {
               const result = game.getResult();
+              if (room && room.gameType === 'guandan') {
+                this.applyGuandanResult(deskId, result);
+              }
               this.broadCastRoom('GAME_OVER', deskId, result)
               this.recordResultToDb(deskId, result);
-              this.updatePosStatus(deskId, 0, 1)
-              this.updatePosStatus(deskId, 1, 1)
-              this.updatePosStatus(deskId, 2, 1)
+              const seats = room ? room.positions.length : 3;
+              for (let i = 0; i < seats; i++) {
+                this.updatePosStatus(deskId, i, 1)
+              }
+              this.updateRoomStatus(deskId, 3);
               game.init();
               this.clearBotTimer(deskId);
               this.rePrepareBots(deskId);
+              this.refreshLobby();
             } else {
               this.scheduleBotAction(deskId);
             }
@@ -891,11 +1277,11 @@ const proto = {
           //更新座位状态
           this.updatePosStatus(deskId, posId, 0, '');
           //重置房间状态
-          this.updateRoomStatus(deskId, posId, 0);
+          this.updateRoomStatus(deskId, 0);
           //解绑座位号 桌号
           this.updateClientState(socket);
           //通知在房间里的其它客户端，更新座位息
-          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 0 }, socket);
+          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 0, userName: '', avatarUrl: '' }, socket);
           //通知大厅其它客户端更新该座位信息
           this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
 
@@ -925,9 +1311,9 @@ const proto = {
 
           // 若该桌已无真人，则清退所有 AI
           if (!this.hasHumanAtDesk(deskId)) {
-            this.removeAllBots(deskId);
-            this.clearBotTimer(deskId);
-            if (this.gameDatas[deskId]) this.gameDatas[deskId].init();
+            this.cleanupRoomIfEmpty(deskId);
+          } else {
+            this.refreshLobby();
           }
         }
 
@@ -992,13 +1378,15 @@ const proto = {
           }));
           snapshot = {
             status,
+            gameType: desk.gameType,
+            levelLabel: desk.guandanLevelLabel,
             cards: handGroups,
             callScores: game.getCalledScores ? Object.assign({}, game.getCalledScores()) : {},
             ctxPosId: game.getContextPosId ? game.getContextPosId() : '',
             ctxScore: game.getContextScore ? game.getContextScore() : [],
             lastCardInfo: game.lastCardInfo ? Object.assign({}, game.lastCardInfo) : null,
           };
-          if (status >= 2) {
+          if (desk.gameType === 'doudizhu' && status >= 2) {
             snapshot.dizhuPosId = game.getDiZhuPosId ? game.getDiZhuPosId() : '';
             const top = (game.getTopCards && game.getTopCards()) || [];
             snapshot.topCards = top.map(c => ({ value: c.value, type: c.type }));
@@ -1006,6 +1394,11 @@ const proto = {
         }
         socket.emit('SPECTATE_SUCCESS', {
           deskId,
+          roomCode: desk.roomCode,
+          gameType: desk.gameType,
+          gameLabel: desk.gameLabel,
+          seatCount: desk.seatCount,
+          guandanLevelLabel: desk.guandanLevelLabel,
           positions: desk.positions,
           gameInProgress,
           snapshot,
@@ -1022,7 +1415,7 @@ const proto = {
         }
         const { deskId } = client;
         this.updateClientState(socket);
-        socket.emit('UNSITDOWN_SUCCESS', this.desks);
+        socket.emit('UNSITDOWN_SUCCESS', this.getLobbyRooms());
         const userName = this.getUserName(socket) || '观众';
         this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName}]离开房间`, id: guid(), time: time() }, socket);
       });
@@ -1050,7 +1443,7 @@ const proto = {
           socket.emit('USER_MESSAGE', { type: 'SYS', posId: client.posId, msg: '已无空位，无法召唤 AI', id: guid(), time: time() });
           return;
         }
-        this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: client.posId, msg: 'AI 对手已落座', id: guid(), time: time() });
+        this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: client.posId, msg: desk.gameType === 'guandan' ? 'AI 已补齐空位' : 'AI 对手已落座', id: guid(), time: time() });
         if (this.checkPrepareAll(deskId)) {
           this.startGame(deskId);
         }

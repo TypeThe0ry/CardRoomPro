@@ -1,8 +1,8 @@
 
 {
-  "name": "doudizhu",
+  "name": "quege-card-room",
   "version": "1.0.0",
-  "description": "在线斗地主",
+  "description": "雀阁纸牌房：支持斗地主、掼蛋和未来扩展玩法的在线房间制纸牌游戏平台",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

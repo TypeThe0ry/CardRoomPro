@@ -43,9 +43,13 @@ function doudizhu_set_jwt_cookie($uid, $username, $ttl = 86400) {
     if (!$uid || !$username) return false;
     $issuedAt = time();
     $expire = $issuedAt + intval($ttl);
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+    $avatarUrl = $host ? ($scheme . '://' . $host . '/uc_server/avatar.php?uid=' . rawurlencode((string)$uid) . '&size=middle') : '';
     $payload = [
         'uid' => intval($uid),
         'username' => strval($username),
+        'avatarUrl' => $avatarUrl,
         'iat' => $issuedAt,
         'exp' => $expire,
     ];

@@ -31,10 +31,14 @@ if (!$uid) {
 
 $issuedAt = time();
 $expire = $issuedAt + 60 * 60 * 24; // token valid for 24 hours; tune as needed
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? '';
+$avatarUrl = $host ? ($scheme . '://' . $host . '/uc_server/avatar.php?uid=' . rawurlencode((string)$uid) . '&size=middle') : '';
 
 $payload = [
     'uid' => $uid,
     'username' => $username,
+    'avatarUrl' => $avatarUrl,
     'iat' => $issuedAt,
     'exp' => $expire,
     // you can add more custom claims if needed

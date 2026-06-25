@@ -143,9 +143,13 @@ if (!$uid) {
 
 // ====== 已登录：签发 JWT 并跳回 ======
 $now = time();
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'zwwx.club';
+$avatar = $scheme . '://' . $host . '/uc_server/avatar.php?uid=' . rawurlencode((string)$uid) . '&size=middle';
 $payload = [
     'uid'      => $uid,
     'username' => strval($_G['member']['username']),
+    'avatarUrl' => $avatar,
     'iat'      => $now,
     'exp'      => $now + SSO_JWT_TTL,
 ];
