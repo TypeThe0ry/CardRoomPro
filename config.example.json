@@ -9,5 +9,6 @@
   "DB_NAME": "zwwx_discuz",
   "DB_TABLE_PREFIX": "pre_",
   "DB_DISABLE": 0,
-  "SCORE_BASE": 1
+  "SCORE_BASE": 1,
+  "DISCUZ_AVATAR_BASE": "https://zwwx.club/uc_server/avatar.php?uid={uid}&size=middle"
 }

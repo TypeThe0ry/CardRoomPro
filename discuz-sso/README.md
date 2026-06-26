@@ -1,103 +1,186 @@
-# Discuz 3.5 与 Doudizhu 在线游戏（JWT SSO）集成说明
+# Discuz SSO 集成指南
 
-本目录提供一个最小可用的 Discuz 3.5 SSO 接入示例：在用户登录后生成 JWT（JSON Web Token），并设置浏览器 cookie `discuz_token`。
+本目录提供 Discuz 与“雀阁 · 纸牌房”的 JWT 单点登录示例。接入后，Discuz 已登录用户可以免手动起名进入游戏，游戏服务器会识别用户 `uid`、用户名和头像，并把斗地主 / 掼蛋战绩分别写入数据库。
 
-前提
-- 你已有一套运行中的 Discuz 3.5；本站点与游戏前端在同一域或可共享 cookie（否则需额外处理跨域）。
-- Node 游戏服务器（doudizhu-online）已经部署并配置为从握手 `auth.token` 中验证 JWT（本仓库已修改 `server.js`）。
+## 目录内容
 
-安装步骤（在 Discuz 站点服务器上）
+```text
+discuz-sso/
+├── bridge.php     # 推荐入口：检查 Discuz 登录态，签发 JWT 并跳回游戏
+├── health.php     # SSO secret 健康检查
+├── sso.php        # 旧式 cookie 集成辅助函数
+└── README.md      # 本文档
+```
 
-1. 进入 Discuz 站点根目录并安装 JWT 依赖：
+推荐使用 `bridge.php`。它会在用户已登录 Discuz 时生成 JWT，并通过 URL hash 返回游戏：
+
+```text
+https://game.example.com/#token=<JWT>
+```
+
+游戏前端读取 token 后通过 Socket.IO `auth.token` 发给 Node 服务端校验。
+
+## 前提
+
+- 已有可运行的 Discuz 站点。
+- Discuz 站点已安装 PHP JWT 依赖。
+- 游戏服务端和 Discuz 端使用同一个强随机 JWT 密钥。
+- 游戏服务端可访问用于保存积分的 MySQL 数据库。
+- 生产环境建议全程 HTTPS。
+
+## 安装 PHP JWT 依赖
+
+在 Discuz 站点根目录执行：
 
 ```bash
 cd /path/to/discuz
 composer require firebase/php-jwt
 ```
 
-2. 将本目录 `discuz-sso` 上传到 Discuz 根目录（保持 `sso.php` 路径，例如：`/path/to/discuz/discuz-sso/sso.php`）。
+如果无法使用 Composer，也可以把 `firebase/php-jwt` 的 `src/` 文件放到 Discuz 或本目录下；`bridge.php` 已包含常见路径的兜底加载逻辑。
 
-3. 在 Discuz 登录成功后调用 SSO 设定函数。
+## 放置文件
 
-   编辑 `member.php`（登录相关逻辑，可能路径为 `member.php?mod=logging&action=login`），找到登录成功分支（通常是 `if ($_G['uid'])` 或相关块），加入：
-
-```php
-require_once DISCUZ_ROOT . './discuz-sso/sso.php';
-doudizhu_set_jwt_cookie($_G['uid'], $_G['member']['username']);
-```
-
-4. 在登出逻辑处清除 cookie（可在 `member.php?mod=logging&action=logout` 或模板退出逻辑处）加入：
-
-```php
-require_once DISCUZ_ROOT . './discuz-sso/sso.php';
-doudizhu_clear_jwt_cookie();
-```
-
-5. 配置 JWT secret
-
-- 强烈建议通过环境变量 `JWT_SECRET` 为 Discuz 与 Node 服务器分别设置相同的强随机字符串，或者在 Discuz 配置文件中定义常量 `DISCUZ_SSO_SECRET`：
-
-```php
-// 在 Discuz 配置或入口文件中加入：
-define('DISCUZ_SSO_SECRET', '请替换为一个强随机字符串');
-```
-
-6. 确保 cookie domain 与 secure 设置
-
-- 默认 `sso.php` 中 cookie `domain` 留空，请替换为你的站点主域（如 `.example.com`）以便子域共享。
-- 如果使用 HTTPS，请确保 `secure` 为 true（脚本会基于 `$_SERVER['HTTPS']` 自动设置）。
-
-7. 前端与服务器
-
-- 前端（`static/index.html`）已经实现读取 `discuz_token` 并在连接时通过 socket.io `auth.token` 发送到 Node 服务器。
-- Node 服务器需要使用与 Discuz 相同的 `JWT_SECRET` 来校验 token（本仓库 `server.js` 已使用 `process.env.JWT_SECRET || 'change_this_in_production'`）。
-
-调试建议
-- 如果自动登录失败，可在浏览器控制台检查 cookie `discuz_token` 是否存在、是否过期。
-- 在 Discuz 端临时将 `doudizhu_set_jwt_cookie()` 的返回值打印或记录到日志以检查生成的 token。
-- 使用 jwt.io 工具可以解码 token 检查 payload（请不要把 secret 放到公共场合）。
-
-常见问题
-- 如果你的网站和游戏不在同一域名下，浏览器默认不会发送 cookie，需使用跨域登录（例如：Discuz 登录后通过 AJAX 将 token 传给游戏域的登录接口，或配置顶级域名共享 cookie）。
-
-联系方式
-- 如果需要，我可以把 `sso.php` 改写为更符合你 Discuz 环境的插件格式（完整插件包），或把集成步骤写成补丁脚本。
-
----
-
-## 数据库配置（积分持久化）
-
-游戏服务器启动后，会把每名 **已通过 Discuz JWT 登录** 的玩家的对局结果写入 MySQL；游客 / AI 不计分。推荐 **直接使用 Discuz 自身的数据库**，无需再开一个库。
-
-### 1. 安装依赖
-
-```bash
-cd /path/to/fight-the-landlord
-npm install         # 会安装新增的 mysql2
-```
-
-### 2. 建表（自动）
-
-服务器启动时会执行 `CREATE TABLE IF NOT EXISTS`，自动创建一张：
+把本目录复制到 Discuz 站点根目录：
 
 ```text
-<前缀>doudizhu_score      # 默认前缀 pre_，即 pre_doudizhu_score
+/path/to/discuz/discuz-sso/bridge.php
+/path/to/discuz/discuz-sso/health.php
+/path/to/discuz/discuz-sso/sso.php
 ```
 
-字段：
+## 配置 JWT Secret
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| uid | INT UNSIGNED PK | Discuz 用户 uid |
-| username | VARCHAR(64) | 显示名（每次对局后刷新） |
-| score | INT | 累计积分（可正可负） |
-| games | INT UNSIGNED | 总局数 |
-| wins / losses | INT UNSIGNED | 胜 / 负局数 |
-| landlord_games | INT UNSIGNED | 当地主局数 |
-| landlord_wins | INT UNSIGNED | 当地主胜局数 |
-| updated_at | INT UNSIGNED | 最近更新时间戳 |
+Discuz 端和 Node 游戏端必须使用完全一致的密钥。
 
-如果你想手动建表（例如生产环境只给只读权限的用户）：
+推荐在 Discuz 的 `config/config_global.php` 中增加：
+
+```php
+define('DISCUZ_SSO_SECRET', 'replace-with-a-strong-random-secret');
+```
+
+Node 端可以通过环境变量或 `config.json` 配置：
+
+```bash
+export JWT_SECRET='replace-with-a-strong-random-secret'
+```
+
+也可以在项目根目录创建 `sso-secret.txt`，但生产环境更推荐环境变量或受控配置文件。
+
+## 配置游戏端登录入口
+
+前端默认使用：
+
+```text
+https://zwwx.club/discuz-sso/bridge.php
+```
+
+如果你的论坛域名不同，修改 `static/index.html` 中的：
+
+```js
+discuzLoginUrl: 'https://your-discuz-domain/discuz-sso/bridge.php'
+```
+
+用户点击“使用 ZWWX.CLUB 账号登录”后，会跳转到该入口。`bridge.php` 会在登录成功后跳回当前游戏域名。
+
+## 健康检查
+
+Discuz 端：
+
+```text
+https://forum.example.com/discuz-sso/health.php
+```
+
+游戏端：
+
+```text
+https://game.example.com/api/sso/health
+```
+
+两个接口都会返回密钥指纹。指纹一致，说明两边使用的是同一个 secret。接口不会泄露明文密钥。
+
+## 数据库积分持久化
+
+游戏服务启动时会自动创建两张表：
+
+```text
+<DB_TABLE_PREFIX>doudizhu_score
+<DB_TABLE_PREFIX>guandan_score
+```
+
+例如默认前缀 `pre_`：
+
+```text
+pre_doudizhu_score
+pre_guandan_score
+```
+
+两张表结构相同：
+
+| 字段 | 说明 |
+| --- | --- |
+| `uid` | Discuz 用户 uid，主键 |
+| `username` | 最近一次记录的用户名 |
+| `score` | 当前玩法累计积分 |
+| `games` | 当前玩法总局数 |
+| `wins` / `losses` | 胜 / 负局数 |
+| `landlord_games` | 斗地主地主局数；掼蛋中保留但通常为 0 |
+| `landlord_wins` | 斗地主地主胜局数；掼蛋中保留但通常为 0 |
+| `updated_at` | 最近更新时间戳 |
+
+## Node 端数据库配置
+
+可以使用环境变量：
+
+```bash
+export DB_HOST=127.0.0.1
+export DB_PORT=3306
+export DB_USER=discuz
+export DB_PASSWORD='replace-with-password'
+export DB_NAME=discuz
+export DB_TABLE_PREFIX=pre_
+export SCORE_BASE=1
+node server.js
+```
+
+也可以复制根目录 `config.example.json` 为 `config.json`：
+
+```json
+{
+  "PORT": 8002,
+  "JWT_SECRET": "与论坛 DISCUZ_SSO_SECRET 完全一致的字符串",
+  "DB_HOST": "127.0.0.1",
+  "DB_PORT": 3306,
+  "DB_USER": "discuz",
+  "DB_PASSWORD": "数据库密码",
+  "DB_NAME": "discuz",
+  "DB_TABLE_PREFIX": "pre_",
+  "DB_DISABLE": 0,
+  "SCORE_BASE": 1
+}
+```
+
+`config.json` 已加入 `.gitignore`，不要提交。
+
+## 最小数据库权限
+
+如果允许游戏服务自动建表：
+
+```sql
+GRANT SELECT, INSERT, UPDATE, CREATE
+ON `discuz`.`pre_doudizhu_score`
+TO 'discuz_game'@'localhost';
+
+GRANT SELECT, INSERT, UPDATE, CREATE
+ON `discuz`.`pre_guandan_score`
+TO 'discuz_game'@'localhost';
+
+FLUSH PRIVILEGES;
+```
+
+如果生产环境不允许自动建表，可以先手动建表，再去掉 `CREATE` 权限。
+
+## 手动建表 SQL
 
 ```sql
 CREATE TABLE IF NOT EXISTS `pre_doudizhu_score` (
@@ -112,92 +195,108 @@ CREATE TABLE IF NOT EXISTS `pre_doudizhu_score` (
   `updated_at` INT UNSIGNED NOT NULL DEFAULT 0,
   KEY `idx_score` (`score`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `pre_guandan_score` LIKE `pre_doudizhu_score`;
 ```
 
-### 3. 环境变量
+## 计分规则
 
-启动 Node 游戏服务器时配置（建议写到 systemd / pm2 ecosystem / `.env` 中，**不要硬编码到代码里**）：
+只有通过 JWT 登录的真人玩家会记录积分。游客、AI、观战用户不计分。
 
-| 变量 | 说明 | 示例 |
-| --- | --- | --- |
-| `JWT_SECRET` | 与 Discuz 端 `DISCUZ_SSO_SECRET` **完全一致** | `a-very-long-random-string` |
-| `DB_HOST` | MySQL 主机 | `127.0.0.1` |
-| `DB_PORT` | 端口 | `3306` |
-| `DB_USER` | 数据库账号 | `discuz` |
-| `DB_PASSWORD` | 密码 | `xxxx` |
-| `DB_NAME` | 库名（建议直接复用 Discuz 的库） | `ultrax` |
-| `DB_TABLE_PREFIX` | Discuz 表前缀 | `pre_` |
-| `SCORE_BASE` | 每分对应多少积分（默认 1） | `1` |
-| `DB_DISABLE` | 设为 `1` 完全关闭持久化（仅内存） | （不设） |
+斗地主：
 
-#### zwwx.club 部署示例
-
-假设 `zwwx.club` 上的 Discuz 配置如下（见 `config/config_global.php` 中 `$_config['db']['1']['dbname']` 与 `$_config['db']['1']['tablepre']`）：
-
-```bash
-# /etc/systemd/system/doudizhu.service 片段
-[Service]
-Environment=JWT_SECRET=请替换为你与Discuz共用的强随机串
-Environment=DB_HOST=127.0.0.1
-Environment=DB_PORT=3306
-Environment=DB_USER=zwwx_dz
-Environment=DB_PASSWORD=你的密码
-Environment=DB_NAME=zwwx_discuz
-Environment=DB_TABLE_PREFIX=pre_
-WorkingDirectory=/var/www/fight-the-landlord
-ExecStart=/usr/bin/node server.js
+```text
+base = 叫分 × 倍率 × SCORE_BASE
+地主胜：地主 +2base，农民各 -base
+地主负：地主 -2base，农民各 +base
 ```
 
-或者最简单，使用 `.env` + `dotenv`/直接 export：
+掼蛋：
 
-```bash
-export JWT_SECRET='...'
-export DB_HOST=127.0.0.1
-export DB_USER=zwwx_dz
-export DB_PASSWORD='...'
-export DB_NAME=zwwx_discuz
-export DB_TABLE_PREFIX=pre_
-node server.js
+```text
+base = 升级数 × SCORE_BASE
+胜方两人各 +base
+负方两人各 -base
 ```
 
-### 4. 数据库账号最小权限（推荐）
+掼蛋升级数：
 
-只给该账号本表的 CRUD + 建表权限即可：
+- 双下：`+3`
+- 头游队友二三名：`+2`
+- 其他胜局：`+1`
 
-```sql
-GRANT SELECT, INSERT, UPDATE, CREATE ON `zwwx_discuz`.`pre_doudizhu_score` TO 'zwwx_dz'@'localhost';
-FLUSH PRIVILEGES;
-```
+## 查询接口
 
-如果你不希望游戏服务自动建表，可去掉 `CREATE` 权限并手动执行第 2 节中的建表 SQL。
-
-### 5. 计分规则
-
-每局结束时（自然胜负，逃跑不算）按下式给所有真人参与者结算：
-
-```
-base = 叫分(score) × 倍率(ratio) × SCORE_BASE
-地主 = ±2 × base       # 胜 + ，负 -
-农民 = ±1 × base
-```
-
-> `ratio` 来自 `game.js` 中的春天/反春加倍；炸弹倍率本项目暂未叠加，可按需在 `game.js` 中扩展。
-
-### 6. 查询接口
-
-游戏服务器额外暴露两个 HTTP 接口，方便你在论坛页面上展示：
-
-| 路径 | 用途 |
+| 接口 | 说明 |
 | --- | --- |
-| `GET /api/score/me?token=<JWT>` | 当前用户积分 / 战绩 |
-| `GET /api/score/top?limit=20`   | 积分榜（无需登录） |
+| `GET /api/score/me?gameType=doudizhu&token=<JWT>` | 当前用户斗地主战绩 |
+| `GET /api/score/me?gameType=guandan&token=<JWT>` | 当前用户掼蛋战绩 |
+| `GET /api/score/top?gameType=doudizhu&limit=20` | 斗地主排行榜 |
+| `GET /api/score/top?gameType=guandan&limit=20` | 掼蛋排行榜 |
+| `GET /api/sso/health` | 游戏端 SSO 密钥健康检查 |
 
-也会在玩家登录或对局结束时通过 socket.io 推送 `MY_SCORE` 事件给本人。
+用户登录和对局结算后，服务端也会通过 Socket.IO 推送 `MY_SCORE` 给本人。
 
-### 7. 排查
+## 头像同步
 
-- 启动时如果看到 `[db] 已连接 MySQL，使用表 pre_doudizhu_score`，说明 OK。
-- 看到 `[db] 未配置 DB_USER / DB_NAME，跳过数据库初始化（内存模式）` ⇒ 环境变量没传进 Node 进程。
-- 看到 `[db] 初始化失败：ER_ACCESS_DENIED_ERROR` ⇒ 账号 / 密码 / 主机错。
-- 表已建但分数没增加 ⇒ 玩家很可能是匿名登录（cookie `discuz_token` 不存在或已过期，回退成手动起名）。可在浏览器 DevTools → Application → Cookies 检查。
+游戏端会优先使用 JWT payload 中的 `avatarUrl`。如果 payload 没有头像，可通过 `DISCUZ_AVATAR_BASE` 配置头像模板：
 
+```bash
+export DISCUZ_AVATAR_BASE='https://forum.example.com/uc_server/avatar.php?uid={uid}&size=middle'
+```
+
+模板中的 `{uid}` 会被替换为 Discuz uid。
+
+## 常见问题
+
+### 自动登录失败
+
+检查：
+
+- Discuz 用户是否已登录。
+- `bridge.php` 是否能访问。
+- `DISCUZ_SSO_SECRET` 与 Node 端 `JWT_SECRET` 指纹是否一致。
+- 游戏域名是否在 `redirect` 白名单逻辑允许范围内。
+
+### JWT 校验失败
+
+访问：
+
+```text
+/discuz-sso/health.php
+/api/sso/health
+```
+
+对比返回的 `fingerprint`。
+
+### 数据库没有写入
+
+检查：
+
+- Node 启动日志是否显示已连接 MySQL。
+- 玩家是否使用 Discuz 登录，而不是访客身份。
+- 数据库账号是否有对应两张积分表的 `SELECT / INSERT / UPDATE` 权限。
+- 游戏是否自然结算完成。
+
+### 排行榜为空
+
+排行榜只展示已入库数据。先使用 Discuz 账号完成至少一局斗地主或掼蛋。
+
+### 跨域 cookie 不生效
+
+当前推荐通过 `bridge.php` + URL hash 返回 token，不依赖跨站 cookie。若仍使用 `sso.php` cookie 模式，请确保：
+
+- 游戏和论坛在同一顶级域名下。
+- cookie domain 设置为顶级域，例如 `.example.com`。
+- HTTPS 环境下 `secure` 设置正确。
+
+## 旧式 cookie 集成
+
+`sso.php` 仍保留两个辅助函数：
+
+```php
+doudizhu_set_jwt_cookie($uid, $username);
+doudizhu_clear_jwt_cookie();
+```
+
+这是早期集成方式，适合游戏和论坛共享 cookie 的同域部署。新部署更推荐 `bridge.php`。
