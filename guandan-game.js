@@ -1,4 +1,5 @@
 const HEART_TYPE = 2;
+const SEQUENCE_ORDER = [14, 15, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
 
 function randomIndex(max) {
   return Math.floor(Math.random() * (max + 1));
@@ -60,15 +61,6 @@ function sameSuit(cards) {
   return cards.every(card => card.type === cards[0].type && card.value < 16);
 }
 
-function isSequence(values) {
-  const arr = values.slice().sort((a, b) => a - b);
-  if (arr.some(v => v >= 15)) return false;
-  for (let i = 1; i < arr.length; i++) {
-    if (arr[i] !== arr[i - 1] + 1) return false;
-  }
-  return true;
-}
-
 function canBuildSameKind(cards, wildCount, size) {
   const normals = cards.filter(c => !c.__wild);
   const counts = countValues(normals);
@@ -81,66 +73,33 @@ function canBuildSameKind(cards, wildCount, size) {
   return { ok: counts[v] + wildCount >= size, key: v };
 }
 
-function canBuildPairsSequence(cards, wildCount, pairCount) {
+function canBuildUnitSequence(cards, wildCount, unitSize, unitCount) {
   const normals = cards.filter(c => !c.__wild);
   const counts = countValues(normals);
-  const values = Object.keys(counts).map(Number).filter(v => v < 15);
-  if (!values.length) return { ok: false };
-  const min = Math.min.apply(Math, values);
-  const max = Math.max.apply(Math, values);
-  for (let start = Math.max(3, max - pairCount + 1); start <= min; start++) {
-    const seq = [];
-    for (let i = 0; i < pairCount; i++) seq.push(start + i);
+  const values = Object.keys(counts).map(Number);
+  if (normals.some(c => c.value >= 16)) return { ok: false };
+  if (values.some(v => counts[v] > unitSize)) return { ok: false };
+  for (let start = 0; start <= SEQUENCE_ORDER.length - unitCount; start++) {
+    const seq = SEQUENCE_ORDER.slice(start, start + unitCount);
     let need = 0;
-    let valid = true;
-    seq.forEach(v => {
-      if (v >= 15) valid = false;
-      need += Math.max(0, 2 - (counts[v] || 0));
-    });
-    if (valid && need <= wildCount && values.every(v => seq.includes(v))) {
+    seq.forEach(v => { need += Math.max(0, unitSize - (counts[v] || 0)); });
+    if (need <= wildCount && values.every(v => seq.includes(v))) {
       return { ok: true, key: start };
     }
   }
   return { ok: false };
+}
+
+function canBuildPairsSequence(cards, wildCount, pairCount) {
+  return canBuildUnitSequence(cards, wildCount, 2, pairCount);
 }
 
 function canBuildTriplesSequence(cards, wildCount, tripleCount) {
-  const normals = cards.filter(c => !c.__wild);
-  const counts = countValues(normals);
-  const values = Object.keys(counts).map(Number).filter(v => v < 15);
-  if (!values.length) return { ok: false };
-  const min = Math.min.apply(Math, values);
-  const max = Math.max.apply(Math, values);
-  for (let start = Math.max(3, max - tripleCount + 1); start <= min; start++) {
-    const seq = [];
-    for (let i = 0; i < tripleCount; i++) seq.push(start + i);
-    let need = 0;
-    let valid = true;
-    seq.forEach(v => {
-      if (v >= 15) valid = false;
-      need += Math.max(0, 3 - (counts[v] || 0));
-    });
-    if (valid && need <= wildCount && values.every(v => seq.includes(v))) {
-      return { ok: true, key: start };
-    }
-  }
-  return { ok: false };
+  return canBuildUnitSequence(cards, wildCount, 3, tripleCount);
 }
 
 function canBuildStraight(cards, wildCount, len) {
-  const normals = cards.filter(c => !c.__wild);
-  const values = normals.map(c => c.value).filter(v => v < 15);
-  if (values.length !== new Set(values).size) return { ok: false };
-  if (normals.some(c => c.value >= 15)) return { ok: false };
-  for (let start = 3; start <= 14 - len + 1; start++) {
-    const seq = [];
-    for (let i = 0; i < len; i++) seq.push(start + i);
-    const miss = seq.filter(v => !values.includes(v)).length;
-    if (miss <= wildCount && values.every(v => seq.includes(v))) {
-      return { ok: true, key: start };
-    }
-  }
-  return { ok: false };
+  return canBuildUnitSequence(cards, wildCount, 1, len);
 }
 
 function analyze(cards, levelRank) {
@@ -200,13 +159,13 @@ function analyze(cards, levelRank) {
     }
   }
 
-  if (len >= 6 && len % 2 === 0) {
-    const pairs = canBuildPairsSequence(cloned, wildCount, len / 2);
+  if (len === 6) {
+    const pairs = canBuildPairsSequence(cloned, wildCount, 3);
     if (pairs.ok) return { status: true, len, key: pairs.key, type: 'PAIRS_SEQ' };
   }
 
-  if (len >= 6 && len % 3 === 0) {
-    const triples = canBuildTriplesSequence(cloned, wildCount, len / 3);
+  if (len === 6) {
+    const triples = canBuildTriplesSequence(cloned, wildCount, 2);
     if (triples.ok) return { status: true, len, key: triples.key, type: 'TRIPLES_SEQ' };
   }
 

@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=layout-20260625-5">
+  <link rel="stylesheet" href="/css/style.css?v=layout-20260626-8">
 </head>
 
 <body class="theme-guofeng">
@@ -134,7 +134,7 @@
       </div>
     </div>
     <!-- 房间 -->
-    <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec, 'room-guandan': gameType === 'guandan'}">
+    <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec, 'room-guandan': gameType === 'guandan', 'room-playing': roomState.state > 0 && roomState.state < 3, 'room-waiting': roomState.state === 0 || roomState.state === 3}">
       <button class="btn-exit-room" @click="exitRoom">{{isSpec ? '退出观战' : '返回大厅'}}</button>
       <span v-if="myUser && myUser.username" class="user-badge user-badge-room" :title="'已用 Discuz 账号登录 (uid=' + myUser.uid + ')'">{{myUser.username}}</span>
       <div v-if="isSpec" class="spec-badge">观 战 模 式</div>
@@ -187,7 +187,7 @@
         </template>
         <template v-if="roomState.state === 2">
           <button class="btn btn-vermilion" @click="playCards">出  牌</button>
-          <button class="btn btn-ghost btn-ai" v-if="gameType === 'doudizhu'" type="button" @click="aiSuggest" title="智囊推荐">智 囊</button>
+          <button class="btn btn-ghost btn-ai" type="button" @click="aiSuggest" title="智囊推荐">智 囊</button>
           <button class="btn btn-jade" @click="passCards" v-if="roomState.ctxCard.len && roomState.ctxCard.ctxPos !== roomState.ctxPos">不  出</button>
         </template>
 
@@ -261,12 +261,12 @@
       <!-- 出牌区域 -->
       <div class="screen-center">
         <!-- 左家的出牌区域 -->
-        <div class="card-ctx card-ctx-left" :style="handGroupStyle(posState.left.ctxCards, 'ctxSide')">
+        <div class="card-ctx card-ctx-left" v-if="(roomState.state === 2 && (posState.left.ctxCards.length || posState.left.isPass)) || (roomState.state === 1 && posState.left.callScore > -1)" :style="handGroupStyle(posState.left.ctxCards, 'ctxSide')">
           <template v-if="roomState.state === 2">
             <div v-if="!posState.left.isPass" @dragStart="dragStart($event)" v-for="(card,index) in posState.left.ctxCards"
               class="card" :class="'card-' + card.value + '-' + card.type" :style="{left:index * handGap(posState.left.ctxCards, 'ctxSide') + 'px'}">
             </div>
-            <div v-if="posState.left.isPass" class="score-tipe">
+            <div v-if="posState.left.isPass" class="score-tipe pass-tipe">
               不出
             </div>
           </template>
@@ -275,12 +275,12 @@
 
         </div>
         <!-- 自己的出牌区域 -->
-        <div class="card-ctx card-ctx-self" :style="handGroupStyle(posState.self.ctxCards, 'ctxSelf')">
+        <div class="card-ctx card-ctx-self" v-if="(roomState.state === 2 && (posState.self.ctxCards.length || posState.self.isPass)) || (roomState.state === 1 && posState.self.callScore > -1)" :style="handGroupStyle(posState.self.ctxCards, 'ctxSelf')">
           <template v-if="roomState.state === 2">
             <div v-if="!posState.self.isPass" @dragStart="dragStart($event)" v-for="(card,index) in posState.self.ctxCards"
               class="card" :class="'card-' + card.value + '-' + card.type" :style="{left:index * handGap(posState.self.ctxCards, 'ctxSelf') + 'px'}">
             </div>
-            <div v-if="posState.self.isPass" class="score-tipe">
+            <div v-if="posState.self.isPass" class="score-tipe pass-tipe">
               不出
             </div>
           </template>
@@ -291,12 +291,12 @@
 
         </div>
         <!-- 右家的出牌区域 -->
-        <div class="card-ctx card-ctx-right" :style="handGroupStyle(posState.right.ctxCards, 'ctxSide')">
+        <div class="card-ctx card-ctx-right" v-if="(roomState.state === 2 && (posState.right.ctxCards.length || posState.right.isPass)) || (roomState.state === 1 && posState.right.callScore > -1)" :style="handGroupStyle(posState.right.ctxCards, 'ctxSide')">
           <template v-if="roomState.state === 2">
             <div v-if="!posState.right.isPass" @dragStart="dragStart($event)" v-for="(card,index) in posState.right.ctxCards"
               class="card" :class="'card-' + card.value + '-' + card.type" :style="{left:index * handGap(posState.right.ctxCards, 'ctxSide') + 'px'}">
             </div>
-            <div v-if="posState.right.isPass" class="score-tipe">
+            <div v-if="posState.right.isPass" class="score-tipe pass-tipe">
               不出
             </div>
           </template>
@@ -305,12 +305,12 @@
 
         </div>
         <!-- 上家的出牌区域（掼蛋） -->
-        <div class="card-ctx card-ctx-top" v-if="gameType === 'guandan'" :style="handGroupStyle(posState.top.ctxCards, 'ctxTop')">
+        <div class="card-ctx card-ctx-top" v-if="gameType === 'guandan' && roomState.state === 2 && (posState.top.ctxCards.length || posState.top.isPass)" :style="handGroupStyle(posState.top.ctxCards, 'ctxTop')">
           <template v-if="roomState.state === 2">
             <div v-if="!posState.top.isPass" @dragStart="dragStart($event)" v-for="(card,index) in posState.top.ctxCards"
               class="card" :class="'card-' + card.value + '-' + card.type" :style="{left:index * handGap(posState.top.ctxCards, 'ctxTop') + 'px'}">
             </div>
-            <div v-if="posState.top.isPass" class="score-tipe">
+            <div v-if="posState.top.isPass" class="score-tipe pass-tipe">
               不出
             </div>
           </template>
@@ -396,13 +396,17 @@
           <div class="msg-foot">
             <input type="text" class="msg-input" ref="msgInput" placeholder="说点什么…" maxlength="120"
               @keyup.enter="sendMessage(false)">
-            <select class="msg-quick" ref="msgSelect" @change="sendMessage($event)" title="选择快语">
-              <option value="" disabled selected>快语</option>
-              <option v-for="item in msgBox" :value="item">{{item}}</option>
-            </select>
             <button class="msg-send" type="button" @click="sendMessage(false)">发送</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="landscape-lock" v-if="where === 2">
+      <div class="landscape-lock-panel">
+        <span class="landscape-lock-icon">↺</span>
+        <div class="landscape-lock-title">请横屏游戏</div>
+        <div class="landscape-lock-text">手机端牌桌只支持横屏布局，旋转屏幕后继续对局。</div>
       </div>
     </div>
 
@@ -417,8 +421,9 @@
   <script src="/js/jquery.min.js"></script>
   <script src="/js/layer/layer.js"></script>
   <script src="/js/parser.js"></script>
-  <script src="/js/ai-suggest.js"></script>
-  <script src="/js/effects.js"></script>
+  <script src="/js/ai-suggest.js?v=20260626-1"></script>
+  <script src="/js/guandan-suggest.js?v=20260626-2"></script>
+  <script src="/js/effects.js?v=20260626-2"></script>
   <script>
 
 
@@ -469,13 +474,6 @@
       el: "#app",
       data: function () {
         return {
-          msgBox: [
-            '你的牌打得太好了',
-            '快点吧，我等到花儿也谢了！',
-            '不要走，决战到天亮。',
-            '和你合作真是太愉快了',
-            '不要吵了，专心玩游戏吧！',
-          ],
           msgList: [],//聊天消息
           chatCollapsed: false,//聊天面板收起态
           _msgSeq: 0,//本地消息序号兜底，避免 :key 冲突
@@ -503,6 +501,8 @@
           // 当前登录用户信息（仅 SSO 自动登录时填充）
           myUser: null,
           topList: [],
+          topLists: { doudizhu: [], guandan: [] },
+          myScores: { doudizhu: null, guandan: null },
           posId: '',//座位号
           deskId: '',//桌号
           roomCode: '',
@@ -510,6 +510,7 @@
           selectedGameType: 'doudizhu',
           roomCodeInput: '',
           guandanLevelLabel: '2',
+          guandanLevelRank: 15,
           desks: [],
           client: '',
           viewportWidth: window.innerWidth || 1280,
@@ -639,6 +640,9 @@
           // 服务端推送的个人战绩
           this.client.on('MY_SCORE', function (row) {
             this.myScore = row || null;
+            if (row && row.gameType) {
+              this.$set(this.myScores, row.gameType, row);
+            }
           }.bind(this));
 
           // SSO 自动登录后服务端会推送 WHOAMI
@@ -685,6 +689,7 @@
             this.roomCode = data.roomCode || data.deskId;
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
+            this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
             (data.positions || data.posInfos || []).forEach(function (pos) {
               this.updatePosStatus(pos.posId, pos.state, pos.userName, !!pos.isBot, pos.avatarUrl);
             }.bind(this))
@@ -716,6 +721,7 @@
             this.roomCode = data.roomCode || data.deskId;
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
+            this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
             this.isSpec = true;
             this.posId = 'spec';
             // 初始化座位状态名字
@@ -788,6 +794,7 @@
             this.roomState.state = this.gameType === 'guandan' ? 2 : 1;
             if (this.gameType === 'guandan') {
               this.guandanLevelLabel = data.levelLabel || this.guandanLevelLabel || '2';
+              this.guandanLevelRank = data.levelRank || this.rankFromLabel(this.guandanLevelLabel);
               this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
               this.roomState.ctxCard = { len: 0, key: '', type: '', ctxPos: '' };
             }
@@ -1035,84 +1042,64 @@
       methods: {
         openStats: function () {
           var self = this;
-          // 异步拉取排行榜
-          self.topList = [];
-          try {
-            fetch('/api/score/top?limit=20').then(function (r) { return r.json(); }).then(function (rows) {
-              self.topList = Array.isArray(rows) ? rows : [];
+          var games = ['doudizhu', 'guandan'];
+          var labels = { doudizhu: '斗地主', guandan: '掼蛋' };
+          self.topLists = { doudizhu: [], guandan: [] };
+          self.myScores = { doudizhu: null, guandan: null };
+          games.forEach(function (gt) {
+            fetch('/api/score/top?gameType=' + gt + '&limit=20').then(function (r) { return r.json(); }).then(function (rows) {
+              self.topLists[gt] = Array.isArray(rows) ? rows : [];
             }).catch(function () {});
-          } catch (e) {}
-          var html = '<div id="stats-panel" style="padding:16px 18px;min-width:340px;max-width:90vw;font-family:inherit;">';
-          if (self.myUser && self.myUser.uid) {
-            // 已登录：优先用真实积分，缺数据则只显示账号信息
-            var s = self.myScore || {};
-            var games = s.games || 0;
-            var winRate = games ? Math.round((s.wins || 0) * 1000 / games) / 10 : 0;
-            var lordRate = s.landlord_games ? Math.round((s.landlord_wins || 0) * 1000 / s.landlord_games) / 10 : 0;
-            var nick = s.username || self.myUser.username || '我';
-            html += '<div style="font-size:16px;font-weight:bold;margin-bottom:8px;">' + nick + ' · 战绩</div>';
-            if (self.myScore && self.myScore.uid) {
-              html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-                '<tr><td style="padding:4px 0;color:#888;">积分</td><td style="text-align:right;font-weight:bold;">' + (s.score | 0) + '</td></tr>' +
-                '<tr><td style="padding:4px 0;color:#888;">总局数</td><td style="text-align:right;">' + games + '</td></tr>' +
-                '<tr><td style="padding:4px 0;color:#888;">胜 / 负</td><td style="text-align:right;">' + (s.wins | 0) + ' / ' + (s.losses | 0) + '</td></tr>' +
-                '<tr><td style="padding:4px 0;color:#888;">胜率</td><td style="text-align:right;">' + winRate + '%</td></tr>' +
-                '<tr><td style="padding:4px 0;color:#888;">地主局数</td><td style="text-align:right;">' + (s.landlord_games | 0) + '</td></tr>' +
-                '<tr><td style="padding:4px 0;color:#888;">地主胜率</td><td style="text-align:right;">' + lordRate + '%</td></tr>' +
-                '</table>';
-            } else {
-              html += '<div style="font-size:13px;color:#888;line-height:1.6;">' +
-                '已用 Discuz 账号登录（uid=' + self.myUser.uid + '），但尚未读取到积分记录。<br>' +
-                '完成一局对战后会自动生成。' +
-                '</div>';
+            if (self.myUser && self.myUser.uid) {
+              var token = self.token || localStorage.getItem('discuz_token') || '';
+              fetch('/api/score/me?gameType=' + gt + '&token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }).then(function (row) {
+                self.myScores[gt] = row && row.uid ? row : null;
+              }).catch(function () {});
             }
-          } else {
-            html += '<div style="font-size:14px;color:#666;line-height:1.6;">' +
-              '您当前为<strong>访客</strong>身份，不记录战绩。<br>' +
-              '请使用 Discuz 账号登录后再查看。' +
-              '</div>';
-          }
-          html += '<div id="stats-top" style="margin-top:14px;">' +
-            '<div style="font-size:14px;font-weight:bold;margin-bottom:6px;">积分榜 TOP 20</div>' +
-            '<div style="font-size:12px;color:#999;">加载中…</div>' +
-            '</div>';
+          });
+          var html = '<div id="stats-panel" class="stats-panel">' +
+            '<div class="stats-head"><strong>' + ((self.myUser && self.myUser.username) || '访客') + '</strong><span>分玩法独立积分</span></div>' +
+            '<div id="stats-mine" class="stats-mine"></div>' +
+            '<div id="stats-top" class="stats-grid"><div class="stats-loading">积分榜加载中...</div></div>';
           if (self.myUser && self.myUser.uid) {
-            html += '<div style="margin-top:14px;text-align:right;">' +
-              '<a href="javascript:;" id="stats-logout" style="color:#888;font-size:12px;">退出登录</a>' +
-              '</div>';
+            html += '<div class="stats-foot"><a href="javascript:;" id="stats-logout">退出登录</a></div>';
           }
           html += '</div>';
           var idx = layer.open({
             type: 1,
             title: '战绩 / 积分榜',
             shadeClose: true,
-            area: ['auto', 'auto'],
+            area: ['min(760px, 94vw)', 'auto'],
             content: html
           });
-          // 填充排行榜
-          var fill = function () {
-            var box = document.getElementById('stats-top');
-            if (!box) return;
-            if (!self.topList.length) {
-              box.innerHTML = '<div style="font-size:14px;font-weight:bold;margin-bottom:6px;">积分榜 TOP 20</div>' +
-                '<div style="font-size:12px;color:#999;">暂无数据</div>';
-              return;
-            }
-            var rows = self.topList.map(function (r, i) {
-              return '<tr><td style="padding:2px 6px;color:#888;width:30px;text-align:right;">' + (i + 1) + '</td>' +
-                '<td style="padding:2px 6px;">' + (r.username || ('uid#' + r.uid)) + '</td>' +
-                '<td style="padding:2px 6px;text-align:right;font-weight:bold;">' + (r.score | 0) + '</td>' +
-                '<td style="padding:2px 6px;text-align:right;color:#888;">' + (r.wins | 0) + '/' + (r.games | 0) + '</td></tr>';
-            }).join('');
-            box.innerHTML = '<div style="font-size:14px;font-weight:bold;margin-bottom:6px;">积分榜 TOP 20</div>' +
-              '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
-              '<thead><tr style="color:#888;"><th></th><th style="text-align:left;">玩家</th><th style="text-align:right;">积分</th><th style="text-align:right;">胜/总</th></tr></thead>' +
-              '<tbody>' + rows + '</tbody></table>';
+          var scoreCard = function (gt) {
+            var s = self.myScores[gt];
+            if (!self.myUser || !self.myUser.uid) return '<div class="stats-card"><b>' + labels[gt] + '</b><em>访客不记录战绩</em></div>';
+            if (!s) return '<div class="stats-card"><b>' + labels[gt] + '</b><em>暂无对局记录</em></div>';
+            var gamesN = s.games || 0;
+            var winRate = gamesN ? Math.round((s.wins || 0) * 1000 / gamesN) / 10 : 0;
+            return '<div class="stats-card"><b>' + labels[gt] + '</b><strong>' + (s.score | 0) + '</strong><span>' + (s.wins | 0) + '胜 / ' + gamesN + '局 · ' + winRate + '%</span></div>';
           };
-          // 轮询一次，等 fetch 完成
+          var board = function (gt) {
+            var rows = self.topLists[gt] || [];
+            if (!rows.length) return '<div class="stats-board"><h4>' + labels[gt] + ' TOP 20</h4><div class="stats-empty">暂无数据</div></div>';
+            var trs = rows.map(function (r, i) {
+              var gamesN = r.games || 0;
+              var rate = gamesN ? Math.round((r.wins || 0) * 1000 / gamesN) / 10 : 0;
+              return '<tr><td>' + (i + 1) + '</td><td>' + (r.username || ('uid#' + r.uid)) + '</td><td>' + (r.score | 0) + '</td><td>' + rate + '%</td><td>' + gamesN + '</td></tr>';
+            }).join('');
+            return '<div class="stats-board"><h4>' + labels[gt] + ' TOP 20</h4><table><thead><tr><th>#</th><th>玩家</th><th>积分</th><th>胜率</th><th>局数</th></tr></thead><tbody>' + trs + '</tbody></table></div>';
+          };
+          var fill = function () {
+            var mine = document.getElementById('stats-mine');
+            var top = document.getElementById('stats-top');
+            if (mine) mine.innerHTML = scoreCard('doudizhu') + scoreCard('guandan');
+            if (top) top.innerHTML = board('doudizhu') + board('guandan');
+          };
           var tries = 0;
           var timer = setInterval(function () {
-            if (self.topList.length || tries++ > 20) { clearInterval(timer); fill(); }
+            if (tries++ > 20) { clearInterval(timer); fill(); return; }
+            fill();
           }, 200);
           // 退出登录
           setTimeout(function () {
@@ -1157,6 +1144,15 @@
         gameTypeName: function (gameType) {
           return gameType === 'guandan' ? '掼蛋' : '斗地主';
         },
+        rankFromLabel: function (label) {
+          if (label === 'J') return 11;
+          if (label === 'Q') return 12;
+          if (label === 'K') return 13;
+          if (label === 'A') return 14;
+          if (label === '2') return 15;
+          var n = Number(label);
+          return n >= 3 && n <= 15 ? n : 15;
+        },
         getNameByPosId: function (posId) {
           var direct = this.getDirectionByPosId(posId);
           return (direct && this.posState[direct] && this.posState[direct].name) || ('玩家' + (Number(posId) + 1));
@@ -1196,7 +1192,7 @@
           var isGd = this.selectedGameType === 'guandan' || this.gameType === 'guandan';
           var title = isGd ? '掼蛋规则' : '斗地主规则';
           var html = isGd
-            ? '<div class="rules-panel"><h3>掼蛋</h3><p>四人两副牌，0/2 与 1/3 为对家。从 2 开始升级，红桃级牌为逢人配。</p><p>支持单张、对子、三张、三带二、顺子、连对、钢板、炸弹、同花顺、四王炸。</p><p>头游队伍按名次升级：双下 +3，二三名 +2，其余 +1。</p></div>'
+            ? '<div class="rules-panel"><h3>掼蛋</h3><p>四人两副牌，0/2 与 1/3 为对家。从 2 开始升级，红桃级牌为逢人配。</p><p>第一类：单张、对子、三连对、三同张、二连三、三带二、五张顺子。不同第一类牌型不能互压，三带二只比三同张大小。</p><p>连续牌型中 A 可作最小，也可作 K+1；例如 A2345、23456、10JQKA、AA2233、QQKKAA 均按顺序比较。</p><p>第二类：四张及以上炸弹、五张同花顺、天王炸。第二类可压任意第一类；炸弹张数优先，张数相同比点数。同花顺可压五张及以下炸弹，六张及以上炸弹更大；天王炸最大。</p><p>头游队伍按名次升级：双下 +3，二三名 +2，其余 +1。</p></div>'
             : '<div class="rules-panel"><h3>斗地主</h3><p>三人叫分抢地主，地主拿底牌，地主一方对抗两名农民。</p><p>支持单/对/三带/顺子/连对/飞机/四带二/炸弹/王炸，炸弹和王炸翻倍。</p><p>房内可召唤 AI 对手，也可以使用智囊推荐出牌。</p></div>';
           layer.open({
             type: 1,
@@ -1341,15 +1337,15 @@
           return { backgroundImage: 'url("' + String(url).replace(/"/g, '\\"') + '")' };
         },
         cardPixelWidth: function () {
-          var w = this.viewportWidth || window.innerWidth || 1280;
+          var w = window.innerWidth || this.viewportWidth || 1280;
           if (w <= 640) return 54;
           if (w <= 1024) return 70;
           return 90;
         },
         handMaxWidth: function (zone) {
-          var w = this.viewportWidth || window.innerWidth || 1280;
-          if (zone === 'self') return Math.max(260, w - (w <= 768 ? 16 : 172));
-          if (zone === 'side') return Math.max(220, Math.min(w <= 1024 ? 305 : 420, Math.floor(w * 0.34)));
+          var w = window.innerWidth || this.viewportWidth || 1280;
+          if (zone === 'self') return Math.max(260, w - (w <= 640 ? 64 : (w <= 768 ? 16 : 172)));
+          if (zone === 'side') return Math.max(180, Math.min(w <= 768 ? 190 : (w <= 1024 ? 190 : 280), Math.floor(w * 0.24)));
           if (zone === 'top') return Math.max(260, Math.min(w <= 1024 ? 420 : 620, w - 360));
           if (zone === 'ctxSelf') return Math.max(220, Math.min(w <= 768 ? w - 32 : 460, Math.floor(w * 0.5)));
           if (zone === 'ctxSide') return Math.max(160, Math.min(w <= 1024 ? 260 : 340, Math.floor(w * 0.28)));
@@ -1367,7 +1363,8 @@
           if (zone === 'self') {
             gap = Math.max(8, Math.min(natural, gap));
           } else {
-            gap = Math.max(5, Math.min(natural, gap));
+            var minGap = (zone === 'side' && (window.innerWidth || this.viewportWidth || 1280) <= 1024) ? 3 : 5;
+            gap = Math.max(minGap, Math.min(natural, gap));
           }
           return gap;
         },
@@ -1508,7 +1505,20 @@
         autoPlayCards: function () {
           if (this.roomState.ctxPos === 'self') {
             if (this.gameType === 'guandan') {
-              var gdCards = this.roomState.ctxCard.len ? [] : [this.posState.self.cards[0]];
+              var gdCards = [];
+              if (window.GuandanSuggest) {
+                gdCards = GuandanSuggest.suggest(this.posState.self.cards, {
+                  len: this.roomState.ctxCard.len,
+                  key: this.roomState.ctxCard.key,
+                  type: this.roomState.ctxCard.type,
+                  ctxPos: this.roomState.ctxCard.ctxPos
+                }, {
+                  levelRank: this.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel),
+                  levelLabel: this.guandanLevelLabel,
+                  lastIsPartner: this.roomState.ctxCard.ctxPos === 'top'
+                });
+              }
+              if (!gdCards.length && !this.roomState.ctxCard.len) gdCards = [this.posState.self.cards[0]];
               this.client.emit('PLAY_CARD', gdCards);
               return;
             }
@@ -1589,6 +1599,7 @@
           if (!snap) return;
           if (snap.gameType) this.gameType = snap.gameType;
           if (snap.levelLabel) this.guandanLevelLabel = snap.levelLabel;
+          if (snap.levelRank) this.guandanLevelRank = snap.levelRank;
           // 1) 手牌（仅渲染左/右位置，self 在观战模式不显示）
           if (snap.cards) this.initCards(snap.cards);
           // 2) 叫分历史
@@ -1625,15 +1636,13 @@
         },
 
         sendMessage: function (e) {
-          var fromSelect = !!(e && e.target && e.target.tagName === 'SELECT');
-          var el = fromSelect ? e.target : this.$refs.msgInput;
+          var el = this.$refs.msgInput;
           var msg = (el && el.value || '').trim();
           if (msg) {
             this.client.emit('USER_MESSAGE', msg);
           }
-          // 发完即清空，select 回归到默认提示项
           if (el) { el.value = ''; }
-          if (!fromSelect && this.$refs.msgInput) {
+          if (this.$refs.msgInput) {
             this.$refs.msgInput.focus();
           }
         },
@@ -1680,14 +1689,24 @@
           if (this.roomState.state !== 2 || this.roomState.ctxPos !== 'self') {
             return layer.msg('暂未到出牌时机');
           }
-          if (!window.AISuggest) return;
           var lastInfo = {
             len: this.roomState.ctxCard.len,
             key: this.roomState.ctxCard.key,
             type: this.roomState.ctxCard.type,
             ctxPos: this.roomState.ctxCard.ctxPos
           };
-          var picks = AISuggest.suggest(this.posState.self.cards, lastInfo);
+          var picks = [];
+          if (this.gameType === 'guandan') {
+            if (!window.GuandanSuggest) return;
+            picks = GuandanSuggest.suggest(this.posState.self.cards, lastInfo, {
+              levelRank: this.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel),
+              levelLabel: this.guandanLevelLabel,
+              lastIsPartner: this.roomState.ctxCard.ctxPos === 'top'
+            });
+          } else {
+            if (!window.AISuggest) return;
+            picks = AISuggest.suggest(this.posState.self.cards, lastInfo);
+          }
           // 先全部反选
           this.posState.self.cards.forEach(function (c) { c.selected = false; });
           if (!picks || !picks.length) {
@@ -1697,11 +1716,12 @@
           // 把建议的牌打勾（按 value+type 匹配，且每张只标记一次）
           var used = {};
           picks.forEach(function (pk) {
-            var k = pk.value + '_' + pk.type;
+            var k = pk.value + '_' + pk.type + '_' + (pk.deck == null ? '*' : pk.deck);
             if (used[k]) return;
             for (var i = 0; i < this.posState.self.cards.length; i++) {
               var c = this.posState.self.cards[i];
-              if (!c.selected && c.value === pk.value && c.type === pk.type) {
+              var deckOk = pk.deck == null || c.deck == null || Number(c.deck || 0) === Number(pk.deck || 0);
+              if (!c.selected && c.value === pk.value && c.type === pk.type && deckOk) {
                 c.selected = true;
                 used[k] = true;
                 break;

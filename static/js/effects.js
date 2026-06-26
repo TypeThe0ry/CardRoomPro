@@ -27,6 +27,16 @@
     AAAB:     { kind: 'soft',    label: '三带一', cls: 'fx-soft',     sound: 'play',      shake: 'none' },
     AA:       { kind: 'tap',     label: '',       cls: 'fx-tap',      sound: 'play',      shake: 'none' },
     A:        { kind: 'tap',     label: '',       cls: 'fx-tap',      sound: 'play',      shake: 'none' },
+    JOKER_BOMB:     { kind: 'king',    label: '四 王 炸', cls: 'fx-king',     sound: 'bomb-king', shake: 'strong' },
+    STRAIGHT_FLUSH: { kind: 'bomb',    label: '同 花 顺', cls: 'fx-bomb',     sound: 'bomb',      shake: 'medium' },
+    BOMB:           { kind: 'bomb',    label: '炸 弹',    cls: 'fx-bomb',     sound: 'bomb',      shake: 'medium' },
+    TRIPLES_SEQ:    { kind: 'plane',   label: '钢 板',    cls: 'fx-plane',    sound: 'plane',     shake: 'soft' },
+    PAIRS_SEQ:      { kind: 'pair',    label: '连 对',    cls: 'fx-pair',     sound: 'pair',      shake: 'soft' },
+    STRAIGHT:       { kind: 'straight',label: '顺 子',    cls: 'fx-straight', sound: 'straight',  shake: 'soft' },
+    FULL_HOUSE:     { kind: 'soft',    label: '葫 芦',    cls: 'fx-soft',     sound: 'play',      shake: 'none' },
+    TRIPLE:         { kind: 'soft',    label: '三 张',    cls: 'fx-soft',     sound: 'play',      shake: 'none' },
+    PAIR:           { kind: 'tap',     label: '',         cls: 'fx-tap',      sound: 'pair',      shake: 'none' },
+    SINGLE:         { kind: 'tap',     label: '',         cls: 'fx-tap',      sound: 'play',      shake: 'none' },
     PASS:     { kind: 'tap',     label: '不 出',  cls: 'fx-pass',     sound: 'pass',      shake: 'none' }
   };
 

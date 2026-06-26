@@ -56,10 +56,14 @@ app.get('/', function (req, res) {
 const Game = require('./game.js');
 const GuandanGame = require('./guandan-game.js');
 const AISuggest = require('./static/js/ai-suggest.js').AISuggest;
+const GuandanSuggest = require('./static/js/guandan-suggest.js').GuandanSuggest;
 const db = require('./db.js');
 
 // 底分（每分对应多少积分）。可通过环境变量调整。
 const SCORE_BASE = Number(process.env.SCORE_BASE || 1);
+const DOU_DIZHU_PLAY_TIMEOUT = 30;
+const DOU_DIZHU_STEP_TIMEOUT = 15;
+const GUANDAN_PLAY_TIMEOUT = 45;
 
 // ========== 安全加固：API 防滥用 ==========
 // 设计原则：所有"加分/扣分"都只能由服务端 socket 流程里的 game.getResult() 触发，
@@ -103,11 +107,12 @@ app.use('/api', (req, res, next) => {
 // HTTP：查询自己积分（需 ?token=JWT）
 app.get('/api/score/me', (req, res) => {
   const token = req.query.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const gameType = normalizeGameType(req.query.gameType);
   if (!token) return res.status(401).json({ error: 'no token' });
   try {
     const jwt = require('jsonwebtoken');
     const payload = jwt.verify(token, proto.JWT_SECRET);
-    db.getUserScore(payload.uid).then(row => res.json(row || {})).catch(() => res.status(500).json({ error: 'db_error' }));
+    db.getUserScore(payload.uid, gameType).then(row => res.json(Object.assign({ gameType }, row || {}))).catch(() => res.status(500).json({ error: 'db_error' }));
   } catch (e) {
     return res.status(401).json({ error: 'invalid token' });
   }
@@ -115,7 +120,8 @@ app.get('/api/score/me', (req, res) => {
 // HTTP：积分榜
 app.get('/api/score/top', (req, res) => {
   const limit = Number(req.query.limit || 20);
-  db.getTopScores(limit).then(rows => res.json(rows || [])).catch(() => res.json([]));
+  const gameType = normalizeGameType(req.query.gameType);
+  db.getTopScores(limit, gameType).then(rows => res.json(rows || [])).catch(() => res.json([]));
 });
 
 // HTTP：SSO 密钥健康检查（仅返回指纹，不泄漏明文）
@@ -584,14 +590,14 @@ const proto = {
       this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
         ctxData: { len: 0, key: '', type: '', cards: [], posId: game.getContextPosId() },
         posId: game.getContextPosId(),
-        timeout: 30,
+        timeout: GUANDAN_PLAY_TIMEOUT,
         isPass: false,
         trickReset: true,
       });
       this.scheduleBotAction(deskId);
     } else {
       this.broadCastRoom('GAME_START', deskId, { cards, gameType: room.gameType });
-      this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos: game.getContextPosId(), ctxScore: game.getContextScore(), timeout: 15 });
+      this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos: game.getContextPosId(), ctxScore: game.getContextScore(), timeout: DOU_DIZHU_STEP_TIMEOUT });
       this.scheduleBotAction(deskId);
     }
   },
@@ -651,27 +657,31 @@ const proto = {
     if (!result || !db.isReady()) return;
     const desk = this.getDesk(deskId);
     if (!desk) return;
-    if (desk.gameType !== 'doudizhu') return;
-    // 判断地主 posId： winner/loser 中只含 1 人的那边
-    const landlordPosId = result.winner.length === 1 ? result.winner[0] : result.loser[0];
-    const base = (Number(result.score) || 1) * (Number(result.ratio) || 1) * SCORE_BASE;
-    [0, 1, 2].forEach(posId => {
+    const seats = desk.gameType === 'guandan' ? [0, 1, 2, 3] : [0, 1, 2];
+    const landlordPosId = desk.gameType === 'doudizhu'
+      ? (result.winner.length === 1 ? result.winner[0] : result.loser[0])
+      : -1;
+    const base = desk.gameType === 'guandan'
+      ? (Number(result.rankDelta) || 1) * SCORE_BASE
+      : (Number(result.score) || 1) * (Number(result.ratio) || 1) * SCORE_BASE;
+    seats.forEach(posId => {
       // 找到该座位的真人客户端
       const client = this.clients.find(c => c.deskId === deskId && c.posId === posId);
       if (!client || !client.uid) return; // 未登录 / 机器人 / 观战 跳过
       const isLandlord = posId === landlordPosId;
       const win = result.winner.includes(posId);
       // 地主赢：+2*base；地主输：-2*base；农民赢：+base；农民输：-base
-      const unit = isLandlord ? 2 : 1;
+      const unit = desk.gameType === 'doudizhu' && isLandlord ? 2 : 1;
       const delta = (win ? 1 : -1) * unit * base;
       db.recordPlayer({
+        gameType: desk.gameType,
         uid: client.uid,
         username: client.userName,
         delta,
         win,
         isLandlord,
-      }).then(() => db.getUserScore(client.uid))
-        .then(row => { if (row) { try { client.socket.emit('MY_SCORE', row); } catch (e) {} } })
+      }).then(() => db.getUserScore(client.uid, desk.gameType))
+        .then(row => { if (row) { try { client.socket.emit('MY_SCORE', Object.assign({ gameType: desk.gameType }, row)); } catch (e) {} } })
         .catch(e => console.error('[db] recordResultToDb 链式异常:', e && e.message));
     });
   },
@@ -718,17 +728,17 @@ const proto = {
         ctxPos: game.getContextPosId(),
         ctxScore: game.getContextScore(),
         calledScores: game.getCalledScores(),
-        timeout: 15
+        timeout: DOU_DIZHU_STEP_TIMEOUT
       });
       this.scheduleBotAction(deskId);
     }
     if (status == 2) {
       const topCards = game.getTopCards();
       const dizhuPosId = game.getDiZhuPosId();
-      this.broadCastRoom('SHOW_TOP_CARD', deskId, { topCards, dizhuPosId, timeout: 15 });
+      this.broadCastRoom('SHOW_TOP_CARD', deskId, { topCards, dizhuPosId, timeout: DOU_DIZHU_STEP_TIMEOUT });
       this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
         ctxData: { len: 0, key: '', type: '', cards: [], posId: dizhuPosId },
-        posId: dizhuPosId, timeout: 30, isPass: false
+        posId: dizhuPosId, timeout: DOU_DIZHU_PLAY_TIMEOUT, isPass: false
       });
       this.scheduleBotAction(deskId);
     }
@@ -774,7 +784,7 @@ const proto = {
     game.next(posId, data);
     this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
       ctxData: { len: data.length, key: ret.key, type: ret.type, cards: data, posId },
-      posId: game.getContextPosId(), timeout: 15, isPass
+      posId: game.getContextPosId(), timeout: DOU_DIZHU_STEP_TIMEOUT, isPass
     });
     if (game.getStatus() === 3) {
       const result = game.getResult();
@@ -797,19 +807,34 @@ const proto = {
     const handRaw = (game.getCardsByPosId(posId) || []).slice(0);
     const last = game.lastCardInfo || {};
     const lead = !last.len || Number(last.posId) === Number(posId);
-    let candidates = [];
+    const teammateId = (Number(posId) + 2) % 4;
+    const opponents = [0, 1, 2, 3].filter(id => id % 2 !== Number(posId) % 2);
+    const opponentMinCardCount = opponents.reduce((min, id) => {
+      const n = (game.getCardsByPosId(id) || []).length;
+      return Math.min(min, n || 99);
+    }, 99);
+    let data = [];
     try {
-      candidates = getGuandanCandidates(game, posId, lead);
+      data = GuandanSuggest.suggest(handRaw, lead ? { len: 0, ctxPos: 'self' } : {
+        len: last.len,
+        key: last.key,
+        type: last.type,
+        bomb: !!last.bomb,
+        bombPower: last.bombPower || 0,
+        ctxPos: 'other',
+      }, {
+        levelRank: game.levelRank,
+        lastIsPartner: !lead && Number(last.posId) % 2 === Number(posId) % 2,
+        teammateCardCount: (game.getCardsByPosId(teammateId) || []).length,
+        opponentMinCardCount,
+      }) || [];
     } catch (e) {
-      candidates = [];
+      data = [];
     }
-
-    let choice = candidates[0] || null;
-    let data = choice ? choice.cards : [];
     let isPass = !data.length;
-    let ret = choice ? choice.ret : game.validate(posId, []);
+    let ret = isPass ? game.validate(posId, []) : game.validate(posId, data);
 
-    if (!choice && lead && handRaw.length) {
+    if ((!ret || !ret.status) && lead && handRaw.length) {
       data = [sortByCard(handRaw)[0]];
       ret = game.validate(posId, data);
       isPass = false;
@@ -826,7 +851,7 @@ const proto = {
     this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
       ctxData: { len: data.length, key: ret.key, type: ret.type, cards: data, posId },
       posId: game.getContextPosId(),
-      timeout: 15,
+      timeout: GUANDAN_PLAY_TIMEOUT,
       isPass,
       trickReset,
     });
@@ -835,6 +860,7 @@ const proto = {
       const result = game.getResult();
       this.applyGuandanResult(deskId, result);
       this.broadCastRoom('GAME_OVER', deskId, result);
+      this.recordResultToDb(deskId, result);
       room.positions.forEach(p => this.updatePosStatus(deskId, p.posId, 1));
       this.updateRoomStatus(deskId, 3);
       game.init();
@@ -1038,6 +1064,7 @@ const proto = {
             seatCount: desk.seatCount,
             isPrivate: desk.isPrivate,
             guandanLevelLabel: desk.guandanLevelLabel,
+            guandanLevelRank: desk.guandanLevelRank,
             positions: desk.positions,
             posInfos
           });
@@ -1167,13 +1194,13 @@ const proto = {
           const ctxPos = game.getContextPosId();
           const ctxScore = game.getContextScore();
           const calledScores = game.getCalledScores();
-          this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos, ctxScore, calledScores, timeout: 15 });
+          this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos, ctxScore, calledScores, timeout: DOU_DIZHU_STEP_TIMEOUT });
           this.scheduleBotAction(deskId);
         }
         if (status == 2) {
           const topCards = game.getTopCards();
           const dizhuPosId = game.getDiZhuPosId();
-          this.broadCastRoom('SHOW_TOP_CARD', deskId, { topCards, dizhuPosId, timeout: 15 });
+          this.broadCastRoom('SHOW_TOP_CARD', deskId, { topCards, dizhuPosId, timeout: DOU_DIZHU_STEP_TIMEOUT });
           this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
             ctxData: {
               len: 0,
@@ -1183,7 +1210,7 @@ const proto = {
               posId: dizhuPosId,
             },
             posId: dizhuPosId,
-            timeout: 30,
+            timeout: DOU_DIZHU_PLAY_TIMEOUT,
             isPass: false,
           })
           this.scheduleBotAction(deskId);
@@ -1223,7 +1250,7 @@ const proto = {
                 posId
               },
               posId: game.getContextPosId(),
-              timeout: 15,
+              timeout: room && room.gameType === 'guandan' ? GUANDAN_PLAY_TIMEOUT : DOU_DIZHU_STEP_TIMEOUT,
               isPass,
               trickReset,
             })
@@ -1380,6 +1407,7 @@ const proto = {
             status,
             gameType: desk.gameType,
             levelLabel: desk.guandanLevelLabel,
+            levelRank: desk.guandanLevelRank,
             cards: handGroups,
             callScores: game.getCalledScores ? Object.assign({}, game.getCalledScores()) : {},
             ctxPosId: game.getContextPosId ? game.getContextPosId() : '',
@@ -1399,6 +1427,7 @@ const proto = {
           gameLabel: desk.gameLabel,
           seatCount: desk.seatCount,
           guandanLevelLabel: desk.guandanLevelLabel,
+          guandanLevelRank: desk.guandanLevelRank,
           positions: desk.positions,
           gameInProgress,
           snapshot,

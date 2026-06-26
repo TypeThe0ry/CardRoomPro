@@ -1,5 +1,5 @@
 /**
- * 斗地主 — 积分持久化（与 Discuz 共库）
+ * 雀阁 — 分玩法积分持久化（与 Discuz 共库）
  *
  * 配置（环境变量）：
  *   DB_HOST            数据库主机（默认 127.0.0.1）
@@ -10,11 +10,15 @@
  *   DB_TABLE_PREFIX    Discuz 表前缀（默认 pre_）
  *   DB_DISABLE         设为 1 时关闭持久化（仅内存）
  *
- * 启动时会自动建表（如果不存在）：<前缀>doudizhu_score
+ * 启动时会自动建表（如果不存在）：<前缀>doudizhu_score / <前缀>guandan_score
  */
 
 const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || 'pre_';
-const TABLE = `${TABLE_PREFIX}doudizhu_score`;
+const TABLES = {
+  doudizhu: `${TABLE_PREFIX}doudizhu_score`,
+  guandan: `${TABLE_PREFIX}guandan_score`,
+};
+const TABLE = TABLES.doudizhu;
 
 let pool = null;
 let ready = false;
@@ -46,8 +50,9 @@ async function init() {
       connectionLimit: 5,
       charset: 'utf8mb4',
     });
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS \`${TABLE}\` (
+    for (const tableName of Object.values(TABLES)) {
+      await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`${tableName}\` (
         \`uid\` INT UNSIGNED NOT NULL PRIMARY KEY,
         \`username\` VARCHAR(64) NOT NULL DEFAULT '',
         \`score\` INT NOT NULL DEFAULT 0,
@@ -60,8 +65,9 @@ async function init() {
         KEY \`idx_score\` (\`score\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
+    }
     ready = true;
-    console.log(`[db] 已连接 MySQL，使用表 ${TABLE}`);
+    console.log(`[db] 已连接 MySQL，使用表 ${Object.values(TABLES).join(' / ')}`);
     return true;
   } catch (err) {
     console.error('[db] 初始化失败：', err && err.message);
@@ -72,6 +78,9 @@ async function init() {
 }
 
 function isReady() { return ready && pool; }
+function tableFor(gameType) {
+  return TABLES[gameType] || TABLES.doudizhu;
+}
 
 /**
  * 记录一名玩家的对局结果。
@@ -84,6 +93,7 @@ function isReady() { return ready && pool; }
  */
 async function recordPlayer(p) {
   if (!isReady() || !p || !p.uid) return;
+  const tableName = tableFor(p.gameType);
   const now = Math.floor(Date.now() / 1000);
   const win = p.win ? 1 : 0;
   const loss = p.win ? 0 : 1;
@@ -91,7 +101,7 @@ async function recordPlayer(p) {
   const lordWin = (p.isLandlord && p.win) ? 1 : 0;
   try {
     await pool.query(
-      `INSERT INTO \`${TABLE}\`
+      `INSERT INTO \`${tableName}\`
         (uid, username, score, games, wins, losses, landlord_games, landlord_wins, updated_at)
        VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
@@ -110,12 +120,13 @@ async function recordPlayer(p) {
   }
 }
 
-async function getUserScore(uid) {
+async function getUserScore(uid, gameType = 'doudizhu') {
   if (!isReady() || !uid) return null;
+  const tableName = tableFor(gameType);
   try {
     const [rows] = await pool.query(
       `SELECT uid, username, score, games, wins, losses, landlord_games, landlord_wins
-       FROM \`${TABLE}\` WHERE uid = ? LIMIT 1`,
+       FROM \`${tableName}\` WHERE uid = ? LIMIT 1`,
       [uid]
     );
     return rows[0] || { uid, username: '', score: 0, games: 0, wins: 0, losses: 0, landlord_games: 0, landlord_wins: 0 };
@@ -125,13 +136,14 @@ async function getUserScore(uid) {
   }
 }
 
-async function getTopScores(limit = 20) {
+async function getTopScores(limit = 20, gameType = 'doudizhu') {
   if (!isReady()) return [];
+  const tableName = tableFor(gameType);
   try {
     const n = Math.max(1, limit | 0);
     const [rows] = await pool.query(
       `SELECT uid, username, score, games, wins, losses
-       FROM \`${TABLE}\` ORDER BY score DESC, wins DESC LIMIT ?`,
+       FROM \`${tableName}\` ORDER BY score DESC, wins DESC LIMIT ?`,
       [n]
     );
     return rows;
@@ -141,4 +153,4 @@ async function getTopScores(limit = 20) {
   }
 }
 
-module.exports = { init, isReady, recordPlayer, getUserScore, getTopScores, TABLE };
+module.exports = { init, isReady, recordPlayer, getUserScore, getTopScores, TABLE, TABLES };
