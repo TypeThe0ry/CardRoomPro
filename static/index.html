@@ -155,12 +155,14 @@
       <div class="guandan-board" v-if="gameType === 'guandan'">
         <div class="guandan-board-title">掼蛋记分</div>
         <div class="guandan-level">当前打 <strong>{{guandanLevelLabel}}</strong></div>
-        <div class="guandan-team-row" v-for="team in guandanTeams" :class="{active: team.score > 0}">
-          <div>
-            <strong>{{team.name}}</strong>
-            <span>{{team.members}}</span>
+        <div class="guandan-teams">
+          <div class="guandan-team-row" v-for="team in guandanTeams" :class="{active: team.score > 0}">
+            <div>
+              <strong>{{team.name}}</strong>
+              <span>{{team.members}}</span>
+            </div>
+            <b>+{{team.score}}</b>
           </div>
-          <b>+{{team.score}}</b>
         </div>
         <div class="guandan-order" v-if="guandanLastOrder.length">
           <span>上局名次</span>
