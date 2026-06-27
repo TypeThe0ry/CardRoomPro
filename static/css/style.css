@@ -2315,14 +2315,18 @@ button.btn-ghost {
   .player-photo { width: 60px; height: 60px; }
   .player-wrapper.player-self { bottom: 188px; }
   .msg-box {
-    bottom: 6px;
+    bottom: 76px;
     max-height: 34vh;
     width: 180px;
     left: auto;
     right: 8px;
-    display: none;
+    display: flex;
+  }
+  .room-playing .msg-box {
+    bottom: 6px;
   }
   .msg-box .msg-body { display: none; }
+  .msg-box:not(.collapsed) .msg-body { display: flex; }
   .msg-box.collapsed { width: 150px; }
   .guandan-board {
     top: 136px;
