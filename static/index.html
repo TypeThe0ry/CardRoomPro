@@ -1180,12 +1180,58 @@
           code = String(code || '');
           if (!code) return;
           var done = function () { layer.msg('房号已复制：' + code); };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(code).then(done).catch(function () {
-              layer.msg('房号：' + code);
+          var escapeHtml = function (text) {
+            return String(text).replace(/[&<>"']/g, function (ch) {
+              return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
             });
+          };
+          var showManualCopy = function () {
+            layer.msg('复制失败，请手动复制房号：' + code);
+            layer.open({
+              type: 1,
+              title: '手动复制房号',
+              shadeClose: true,
+              area: ['min(320px, 90vw)', 'auto'],
+              content: '<div style="padding:18px;text-align:center;">' +
+                '<div style="margin-bottom:10px;color:#666;">复制失败，请手动复制房号：</div>' +
+                '<textarea readonly style="box-sizing:border-box;width:100%;min-height:52px;padding:12px;text-align:center;font-size:22px;font-weight:bold;letter-spacing:2px;resize:none;" onclick="this.select()">' + escapeHtml(code) + '</textarea>' +
+                '</div>',
+              success: function (layero) {
+                var field = layero && layero[0] ? layero[0].querySelector('textarea') : null;
+                if (field) {
+                  field.focus();
+                  field.select();
+                }
+              }
+            });
+          };
+          var fallbackCopy = function () {
+            var field = document.createElement('textarea');
+            field.value = code;
+            field.setAttribute('readonly', 'readonly');
+            field.style.position = 'fixed';
+            field.style.left = '-9999px';
+            field.style.top = '0';
+            document.body.appendChild(field);
+            field.focus();
+            field.select();
+            var ok = false;
+            try {
+              ok = document.execCommand('copy');
+            } catch (e) {
+              ok = false;
+            }
+            document.body.removeChild(field);
+            if (ok) {
+              done();
+            } else {
+              showManualCopy();
+            }
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(code).then(done).catch(fallbackCopy);
           } else {
-            layer.msg('房号：' + code);
+            fallbackCopy();
           }
         },
         openRules: function () {
