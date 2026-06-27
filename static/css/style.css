@@ -2171,7 +2171,8 @@ button.btn-ghost {
     min-width: 0;
     max-width: 168px;
   }
-  .room-playing .score-board {
+  .room-playing .score-board,
+  .room-playing .guandan-board {
     display: none;
   }
   .msg-box.collapsed { width: 180px; left: auto; }
@@ -2190,7 +2191,13 @@ button.btn-ghost {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .spec-badge { top: 118px; }
+  .spec-badge {
+    top: 8px;
+    min-width: 150px;
+    padding: 6px 14px;
+    font-size: 13px;
+    letter-spacing: 0.2em;
+  }
   .guandan-board {
     top: 136px;
     left: 8px;
@@ -2234,6 +2241,11 @@ button.btn-ghost {
   .guandan-order {
     display: none;
   }
+}
+
+@media (max-width: 768px) and (max-height: 360px) {
+  .btn-group { bottom: 118px; }
+  .card-ctx-self { bottom: 206px; }
 }
 @media (max-width: 480px) {
   .room {
@@ -2331,6 +2343,7 @@ button.btn-ghost {
     display: none;
   }
   .btn-exit-room { top: 8px; left: 8px; right: auto; padding: 0 12px; letter-spacing: 0.08em; }
+  .user-badge-room { max-width: 110px; }
   .player-wrapper { width: 92px; height: 100px; }
   .player-photo { width: 60px; height: 60px; }
   .player-wrapper.player-self { bottom: 188px; }
