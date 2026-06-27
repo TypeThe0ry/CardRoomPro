@@ -1846,15 +1846,16 @@ button.btn-ghost {
 }
 .room-guandan .player-top {
   position: fixed;
-  left: 50%;
-  top: calc(var(--table-top-safe) + var(--card-h) + 30px);
-  transform: translateX(-50%) scale(0.92);
-  transform-origin: top center;
+  left: calc(50vw - 430px);
+  top: var(--table-top-safe);
+  transform: none;
+  transform-origin: top left;
   z-index: 28;
 }
 .room-guandan .player-top .team-tag {
   top: -8px;
-  right: -14px;
+  left: -8px;
+  right: auto;
 }
 .room-guandan .player-right {
   right: calc(var(--table-right-safe) - 124px);
@@ -1866,7 +1867,8 @@ button.btn-ghost {
 }
 .room-guandan .card-ctx-top {
   left: 50%;
-  top: calc(var(--table-top-safe) + var(--card-h) + 18px);
+  top: calc(var(--table-top-safe) + var(--card-h) + 8px);
+  z-index: 34;
 }
 .room-guandan .card-ctx-left {
   top: calc(50vh - var(--card-h) / 2);
@@ -1984,7 +1986,7 @@ button.btn-ghost {
   .card-ctx-left    { top: calc(50vh - 184px); left: clamp(170px, calc(50vw - 240px), 320px); }
   .card-ctx-right   { top: calc(50vh - 184px); right: clamp(170px, calc(50vw - 240px), 320px); }
   .card-ctx-top     { top: calc(var(--table-top-safe) + var(--card-h) + 24px); }
-  .room-guandan .card-ctx-top { left: 50%; top: calc(var(--table-top-safe) + var(--card-h) + 24px); }
+  .room-guandan .card-ctx-top { left: 50%; top: calc(var(--table-top-safe) + var(--card-h) + 10px); }
   .room-guandan .card-ctx-left {
     top: calc(50vh - var(--card-h) / 2);
     left: calc(var(--table-left-safe) + 290px);
@@ -2000,10 +2002,10 @@ button.btn-ghost {
   .player-top       { top: calc(var(--table-top-safe) + var(--card-h) + 22px); }
   .room-guandan .player-top {
     display: block;
-    left: 50%;
-    top: calc(var(--table-top-safe) + var(--card-h) + 22px);
-    transform: translateX(-50%) scale(0.78);
-    transform-origin: top center;
+    left: calc(50vw - 310px);
+    top: var(--table-top-safe);
+    transform: scale(0.78);
+    transform-origin: top left;
   }
   .icon-group-left {
     top: 20px;
