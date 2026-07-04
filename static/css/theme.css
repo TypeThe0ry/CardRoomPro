@@ -123,3 +123,6 @@
 @media (max-width: 640px) {
   :root { --card-w: 54px; --card-h: 72px; }
 }
+@media (max-width: 900px) and (max-height: 480px) and (orientation: landscape) {
+  :root { --card-w: 46px; --card-h: 61px; }
+}

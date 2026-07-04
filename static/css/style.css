@@ -2253,6 +2253,149 @@ button.btn-ghost {
   .btn-group { bottom: 118px; }
   .card-ctx-self { bottom: 206px; }
 }
+@media (max-width: 900px) and (max-height: 480px) and (orientation: landscape) {
+  .room {
+    --table-top-safe: 54px;
+    --table-left-safe: 74px;
+    --table-right-safe: 74px;
+  }
+  .btn-exit-room {
+    top: 8px;
+    left: 8px;
+    height: 32px;
+    min-height: 32px;
+    padding: 0 14px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+  }
+  .room-topbar {
+    top: 8px;
+    left: 116px;
+    right: 8px;
+    width: auto;
+    min-height: 34px;
+    transform: none;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 5px 8px 5px 12px;
+    border-radius: 12px;
+  }
+  .room-title,
+  .room-top-actions {
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    gap: 7px;
+  }
+  .room-title {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+  .room-title strong {
+    font-size: 13px;
+  }
+  .room-title span,
+  .room-top-actions span {
+    font-size: 11px;
+  }
+  .room-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .room-top-actions {
+    flex: 0 0 auto;
+  }
+  .room-top-actions button {
+    min-height: 27px;
+    padding: 0 9px;
+    font-size: 11px;
+  }
+  .card-group-top {
+    top: var(--table-top-safe);
+  }
+  .room-guandan .card-group-top.card-group-up {
+    top: var(--table-top-safe);
+  }
+  .card-group-left {
+    left: var(--table-left-safe);
+    top: 51%;
+  }
+  .card-group-right {
+    right: var(--table-right-safe);
+    top: 51%;
+  }
+  .card-group-self {
+    bottom: 10px;
+    max-width: calc(100vw - 40px);
+  }
+  .btn-group {
+    bottom: 74px;
+    max-width: calc(100vw - 28px);
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 22px;
+  }
+  .btn-group .btn {
+    min-width: 62px;
+    height: 34px;
+    padding: 0 12px;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+  }
+  .clock {
+    width: 42px;
+    height: 42px;
+    font-size: 15px;
+  }
+  .card-ctx-self {
+    bottom: 122px;
+  }
+  .card-ctx-left {
+    left: calc(50% - 222px);
+    top: calc(50vh - var(--card-h) / 2);
+  }
+  .card-ctx-right {
+    right: calc(50% - 222px);
+    top: calc(50vh - var(--card-h) / 2);
+  }
+  .card-ctx-top {
+    top: calc(var(--table-top-safe) + var(--card-h) + 8px);
+  }
+  .room-guandan .card-ctx-top {
+    top: calc(var(--table-top-safe) + var(--card-h) + 8px);
+  }
+  .room-guandan .card-ctx-left {
+    left: calc(50% - 230px);
+    top: calc(50vh - var(--card-h) / 2);
+  }
+  .room-guandan .card-ctx-right {
+    right: calc(50% - 230px);
+    top: calc(50vh - var(--card-h) / 2);
+  }
+  .room-playing .score-board,
+  .room-playing .guandan-board,
+  .room-playing .msg-box {
+    display: none;
+  }
+  .room-waiting .msg-box {
+    display: none;
+  }
+  .player-wrapper.player-self {
+    bottom: 82px;
+    transform: scale(0.72);
+    transform-origin: left bottom;
+  }
+  .bot-bar {
+    bottom: 66px;
+  }
+  .btn-prepare {
+    bottom: 10px;
+    height: 42px;
+    padding: 0 34px;
+    font-size: 17px;
+  }
+}
 @media (max-width: 480px) {
   .room {
     --table-top-safe: 146px;

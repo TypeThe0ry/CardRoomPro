@@ -1412,12 +1412,25 @@
         },
         cardPixelWidth: function () {
           var w = window.innerWidth || this.viewportWidth || 1280;
+          var h = window.innerHeight || 720;
+          if (w <= 900 && h <= 480 && w > h) return 46;
           if (w <= 640) return 54;
           if (w <= 1024) return 70;
           return 90;
         },
         handMaxWidth: function (zone) {
           var w = window.innerWidth || this.viewportWidth || 1280;
+          var h = window.innerHeight || 720;
+          var compactLandscape = w <= 900 && h <= 480 && w > h;
+          if (compactLandscape) {
+            if (zone === 'self') return Math.max(260, w - 40);
+            if (zone === 'side') return Math.max(150, Math.min(180, Math.floor(w * 0.26)));
+            if (zone === 'top') return Math.max(120, Math.min(260, w - 260));
+            if (zone === 'ctxSelf') return Math.max(160, Math.min(260, Math.floor(w * 0.34)));
+            if (zone === 'ctxSide') return Math.max(140, Math.min(220, Math.floor(w * 0.28)));
+            if (zone === 'ctxTop') return Math.max(150, Math.min(240, Math.floor(w * 0.32)));
+            if (zone === 'kitty') return 130;
+          }
           if (zone === 'self') return Math.max(260, w - (w <= 640 ? 64 : (w <= 768 ? 16 : 172)));
           if (zone === 'side') return Math.max(180, Math.min(w <= 768 ? 190 : (w <= 1024 ? 190 : 280), Math.floor(w * 0.24)));
           if (zone === 'top') return Math.max(260, Math.min(w <= 1024 ? 420 : 620, w - 360));
@@ -1486,6 +1499,8 @@
         },
         tableTopSafePx: function () {
           var w = window.innerWidth || this.viewportWidth || 1280;
+          var h = window.innerHeight || 720;
+          if (w <= 900 && h <= 480 && w > h) return 54;
           if (w <= 480) return 146;
           if (w <= 768) return 150;
           if (w <= 1024) return 106;
