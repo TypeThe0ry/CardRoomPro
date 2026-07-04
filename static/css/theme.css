@@ -22,11 +22,21 @@
   --gold-400:    #e9c178;
   --gold-300:    #f3d99a;
   --gold-100:    #fbf1cf;
+  --gold:        var(--gold-500);
+  --gold-200:    var(--gold-100);
+  --gold-soft:   var(--gold-300);
 
   --vermilion-700: #8a1f1c;
   --vermilion-500: #c8362f; /* 朱砂 */
   --vermilion-400: #e85a4f;
   --vermilion-300: #f08a82;
+  --vermilion:      var(--vermilion-500);
+  --vermilion-deep: var(--vermilion-700);
+  --vermilion-soft: var(--vermilion-300);
+
+  --jade:       var(--jade-500);
+  --jade-soft:  var(--jade-300);
+  --jade-line:  rgba(141, 213, 196, 0.45);
 
   --paper-100:   #f7efd9;   /* 宣纸米 */
   --paper-200:   #ede0c2;

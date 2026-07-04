@@ -246,6 +246,8 @@ button.btn-ghost {
   margin-top: 22px;
   white-space: nowrap;
 }
+.login-form .input { min-width: 0; }
+.login-form button { flex: 0 0 auto; }
 .auto-login {
   color: var(--text-soft);
   font-size: 14px;
@@ -1009,7 +1011,7 @@ button.btn-ghost {
   inset: 0;
   height: auto;
   transform: none;
-  z-index: 4;
+  z-index: 70;
   pointer-events: none;
 }
 .card-ctx {
@@ -1017,14 +1019,14 @@ button.btn-ghost {
   height: var(--card-h);
   pointer-events: none;
   animation: ctx-float-in 320ms var(--ease-back) both;
-  z-index: 35;
+  z-index: 76;
 }
 .card-ctx-self {
   top: auto;
-  bottom: 228px;
+  bottom: 286px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 42;
+  z-index: 78;
   animation-name: ctx-float-in-center;
 }
 .card-ctx-left  { top: calc(50vh - 220px); left: clamp(240px, calc(50vw - 280px), 720px); }
@@ -1868,16 +1870,16 @@ button.btn-ghost {
 .room-guandan .card-ctx-top {
   left: 50%;
   top: calc(var(--table-top-safe) + var(--card-h) + 8px);
-  z-index: 34;
+  z-index: 76;
 }
 .room-guandan .card-ctx-left {
-  /* 掼蛋四人局左右两家的出牌区错层摆放，避免大牌型时上家/下家互相覆盖。 */
-  top: calc(50vh - var(--card-h) - 52px);
-  left: calc(var(--table-left-safe) + clamp(260px, 18vw, 420px));
+  /* 掼蛋四人局出牌区按菱形分区摆放，避免互相盖牌。 */
+  top: calc(50vh - var(--card-h) / 2 - 10px);
+  left: calc(50% - 360px);
 }
 .room-guandan .card-ctx-right {
-  top: calc(50vh + 42px);
-  right: calc(var(--table-right-safe) + clamp(260px, 18vw, 420px));
+  top: calc(50vh - var(--card-h) / 2 - 10px);
+  right: calc(50% - 360px);
 }
 @media (max-width: 720px) {
   .score-board { top: 150px; left: 8px; width: 164px; min-width: 0; max-width: 164px; padding: 8px 10px; }
@@ -1989,14 +1991,14 @@ button.btn-ghost {
   .card-ctx-top     { top: calc(var(--table-top-safe) + var(--card-h) + 24px); }
   .room-guandan .card-ctx-top { left: 50%; top: calc(var(--table-top-safe) + var(--card-h) + 10px); }
   .room-guandan .card-ctx-left {
-    top: calc(50vh - var(--card-h) - 42px);
-    left: calc(var(--table-left-safe) + 220px);
+    top: calc(50vh - var(--card-h) / 2 + 8px);
+    left: calc(50% - 250px);
   }
   .room-guandan .card-ctx-right {
-    top: calc(50vh + 34px);
-    right: calc(var(--table-right-safe) + 220px);
+    top: calc(50vh - var(--card-h) / 2 + 8px);
+    right: calc(50% - 250px);
   }
-  .card-ctx-self    { top: auto; bottom: 184px; }
+  .card-ctx-self    { top: auto; bottom: 244px; }
   .player-left      { left: calc(var(--table-left-safe) - 118px); top: calc(50vh - 58px); }
   .player-self-ctx  { left: clamp(16px, calc(50vw - 360px), 170px); right: auto; top: auto; bottom: calc(44px + var(--card-h) + 10px); }
   .player-right     { right: calc(var(--table-right-safe) - 118px); top: calc(50vh - 58px); }
@@ -2065,21 +2067,25 @@ button.btn-ghost {
   }
   .house { padding: 74px 14px 24px; gap: 14px; }
   .quick-bar {
-    padding: 10px 12px;
-    gap: 8px;
+    padding: 8px 8px;
+    gap: 6px;
     overflow-x: auto;
+    flex-wrap: nowrap;
     justify-content: flex-start;
   }
   .quick-bar::before { font-size: 18px; letter-spacing: 0.2em; }
-  .quick-brand strong { font-size: 18px; letter-spacing: 0.18em; }
+  .quick-brand strong { font-size: 17px; letter-spacing: 0.16em; }
   .quick-brand span { display: none; }
   .quick-bar > button,
   .quick-bar > button + button,
   .user-badge { margin-left: 0; }
+  .btn-mute { margin-right: 0 !important; }
   .quick-bar button {
+    flex: 0 0 auto;
     min-height: 34px;
-    padding: 0 12px;
+    padding: 0 10px;
     font-size: 12px;
+    white-space: nowrap;
   }
   .hall-hero {
     padding: 22px 18px;
@@ -2133,14 +2139,14 @@ button.btn-ghost {
   .card-ctx-top     { top: calc(var(--table-top-safe) + var(--card-h) + 18px); }
   .room-guandan .card-ctx-top { top: 326px; }
   .room-guandan .card-ctx-left {
-    left: calc(var(--table-left-safe) + 300px);
+    left: calc(50% - 220px);
     top: calc(50vh - var(--card-h) / 2);
   }
   .room-guandan .card-ctx-right {
-    right: calc(var(--table-right-safe) + 300px);
+    right: calc(50% - 220px);
     top: calc(50vh - var(--card-h) / 2);
   }
-  .card-ctx-self    { top: auto; bottom: 236px; }
+  .card-ctx-self    { top: auto; bottom: 254px; }
   .player-left,
   .player-right     { display: none; }
   .player-top       { top: calc(var(--table-top-safe) + var(--card-h) + 16px); }
@@ -2253,6 +2259,13 @@ button.btn-ghost {
     --table-left-safe: 62px;
     --table-right-safe: 62px;
   }
+  .login-form {
+    flex-direction: column;
+    white-space: normal;
+  }
+  .login-form button {
+    width: 100%;
+  }
   .house { padding: 70px 14px 24px; gap: 16px; }
   .desk { width: 152px; height: 152px; padding: 14px; }
   .room-card {
@@ -2328,11 +2341,11 @@ button.btn-ghost {
   .card-ctx-top { top: calc(var(--table-top-safe) + var(--card-h) + 16px); }
   .room-guandan .card-ctx-top { left: 50%; top: 286px; }
   .room-guandan .card-ctx-left {
-    left: calc(var(--table-left-safe) + clamp(144px, 38vw, 188px));
+    left: calc(50% - 160px);
     top: calc(50vh - var(--card-h) / 2);
   }
   .room-guandan .card-ctx-right {
-    right: calc(var(--table-right-safe) + clamp(144px, 38vw, 188px));
+    right: calc(50% - 160px);
     top: calc(50vh - var(--card-h) / 2);
   }
   .room-guandan .player-left,
