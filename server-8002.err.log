@@ -1,0 +1,2 @@
+[db] DB_DISABLE=1，已禁用积分持久化（内存模式）
+[WARN] JWT_SECRET 使用默认占位值，跨域 SSO token 必然校验失败。请在启动 node 进程时设置 JWT_SECRET 环境变量，并与论坛侧 DISCUZ_SSO_SECRET 保持一致。

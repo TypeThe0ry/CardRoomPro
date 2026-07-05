@@ -878,15 +878,18 @@ button.btn-ghost {
 }
 
 /* =====================================================================
- *  扑克牌精灵图（保留原坐标，逻辑兼容）
+ *  扑克牌精灵图
+ *  雪碧图原始单元为 90x120，移动端会缩放到 --card-w/--card-h。
  * ===================================================================== */
 .card {
   display: inline-block;
   position: absolute;
   top: 0;
-  height: 120px; width: 90px;
+  height: var(--card-h);
+  width: var(--card-w);
   background-image: url('/images/poker.png');
   background-repeat: no-repeat;
+  background-size: calc(var(--card-w) * 13) calc(var(--card-h) * 5);
   border-radius: 7px;
   overflow: hidden;
   box-shadow: 0 4px 10px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.18) inset;
@@ -899,61 +902,61 @@ button.btn-ghost {
 .card:hover { box-shadow: 0 8px 18px rgba(0,0,0,0.45), 0 0 0 1px rgba(212,168,90,0.45); }
 
 .card-14-0 { background-position: 0 0; }
-.card-14-1 { background-position: 0 -120px; }
-.card-14-2 { background-position: 0 -240px; }
-.card-14-3 { background-position: 0 -360px; }
-.card-15-0 { background-position: -90px 0; }
-.card-15-1 { background-position: -90px -120px; }
-.card-15-2 { background-position: -90px -240px; }
-.card-15-3 { background-position: -90px -360px; }
-.card-3-0  { background-position: -180px 0; }
-.card-3-1  { background-position: -180px -120px; }
-.card-3-2  { background-position: -180px -240px; }
-.card-3-3  { background-position: -180px -360px; }
-.card-4-0  { background-position: -270px 0; }
-.card-4-1  { background-position: -270px -120px; }
-.card-4-2  { background-position: -270px -240px; }
-.card-4-3  { background-position: -270px -360px; }
-.card-5-0  { background-position: -360px 0; }
-.card-5-1  { background-position: -360px -120px; }
-.card-5-2  { background-position: -360px -240px; }
-.card-5-3  { background-position: -360px -360px; }
-.card-6-0  { background-position: -450px 0; }
-.card-6-1  { background-position: -450px -120px; }
-.card-6-2  { background-position: -450px -240px; }
-.card-6-3  { background-position: -450px -360px; }
-.card-7-0  { background-position: -540px 0; }
-.card-7-1  { background-position: -540px -120px; }
-.card-7-2  { background-position: -540px -240px; }
-.card-7-3  { background-position: -540px -360px; }
-.card-8-0  { background-position: -630px 0; }
-.card-8-1  { background-position: -630px -120px; }
-.card-8-2  { background-position: -630px -240px; }
-.card-8-3  { background-position: -630px -360px; }
-.card-9-0  { background-position: -720px 0; }
-.card-9-1  { background-position: -720px -120px; }
-.card-9-2  { background-position: -720px -240px; }
-.card-9-3  { background-position: -720px -360px; }
-.card-10-0 { background-position: -810px 0; }
-.card-10-1 { background-position: -810px -120px; }
-.card-10-2 { background-position: -810px -240px; }
-.card-10-3 { background-position: -810px -360px; }
-.card-11-0 { background-position: -900px 0; }
-.card-11-1 { background-position: -900px -120px; }
-.card-11-2 { background-position: -900px -240px; }
-.card-11-3 { background-position: -900px -360px; }
-.card-12-0 { background-position: -990px 0; }
-.card-12-1 { background-position: -990px -120px; }
-.card-12-2 { background-position: -990px -240px; }
-.card-12-3 { background-position: -990px -360px; }
-.card-13-0 { background-position: -1080px 0; }
-.card-13-1 { background-position: -1080px -120px; }
-.card-13-2 { background-position: -1080px -240px; }
-.card-13-3 { background-position: -1080px -360px; }
-.card-16-0 { background-position: -90px -480px; }
-.card-17-0 { background-position: 0 -480px; }
+.card-14-1 { background-position: 0 calc(var(--card-h) * -1); }
+.card-14-2 { background-position: 0 calc(var(--card-h) * -2); }
+.card-14-3 { background-position: 0 calc(var(--card-h) * -3); }
+.card-15-0 { background-position: calc(var(--card-w) * -1) 0; }
+.card-15-1 { background-position: calc(var(--card-w) * -1) calc(var(--card-h) * -1); }
+.card-15-2 { background-position: calc(var(--card-w) * -1) calc(var(--card-h) * -2); }
+.card-15-3 { background-position: calc(var(--card-w) * -1) calc(var(--card-h) * -3); }
+.card-3-0  { background-position: calc(var(--card-w) * -2) 0; }
+.card-3-1  { background-position: calc(var(--card-w) * -2) calc(var(--card-h) * -1); }
+.card-3-2  { background-position: calc(var(--card-w) * -2) calc(var(--card-h) * -2); }
+.card-3-3  { background-position: calc(var(--card-w) * -2) calc(var(--card-h) * -3); }
+.card-4-0  { background-position: calc(var(--card-w) * -3) 0; }
+.card-4-1  { background-position: calc(var(--card-w) * -3) calc(var(--card-h) * -1); }
+.card-4-2  { background-position: calc(var(--card-w) * -3) calc(var(--card-h) * -2); }
+.card-4-3  { background-position: calc(var(--card-w) * -3) calc(var(--card-h) * -3); }
+.card-5-0  { background-position: calc(var(--card-w) * -4) 0; }
+.card-5-1  { background-position: calc(var(--card-w) * -4) calc(var(--card-h) * -1); }
+.card-5-2  { background-position: calc(var(--card-w) * -4) calc(var(--card-h) * -2); }
+.card-5-3  { background-position: calc(var(--card-w) * -4) calc(var(--card-h) * -3); }
+.card-6-0  { background-position: calc(var(--card-w) * -5) 0; }
+.card-6-1  { background-position: calc(var(--card-w) * -5) calc(var(--card-h) * -1); }
+.card-6-2  { background-position: calc(var(--card-w) * -5) calc(var(--card-h) * -2); }
+.card-6-3  { background-position: calc(var(--card-w) * -5) calc(var(--card-h) * -3); }
+.card-7-0  { background-position: calc(var(--card-w) * -6) 0; }
+.card-7-1  { background-position: calc(var(--card-w) * -6) calc(var(--card-h) * -1); }
+.card-7-2  { background-position: calc(var(--card-w) * -6) calc(var(--card-h) * -2); }
+.card-7-3  { background-position: calc(var(--card-w) * -6) calc(var(--card-h) * -3); }
+.card-8-0  { background-position: calc(var(--card-w) * -7) 0; }
+.card-8-1  { background-position: calc(var(--card-w) * -7) calc(var(--card-h) * -1); }
+.card-8-2  { background-position: calc(var(--card-w) * -7) calc(var(--card-h) * -2); }
+.card-8-3  { background-position: calc(var(--card-w) * -7) calc(var(--card-h) * -3); }
+.card-9-0  { background-position: calc(var(--card-w) * -8) 0; }
+.card-9-1  { background-position: calc(var(--card-w) * -8) calc(var(--card-h) * -1); }
+.card-9-2  { background-position: calc(var(--card-w) * -8) calc(var(--card-h) * -2); }
+.card-9-3  { background-position: calc(var(--card-w) * -8) calc(var(--card-h) * -3); }
+.card-10-0 { background-position: calc(var(--card-w) * -9) 0; }
+.card-10-1 { background-position: calc(var(--card-w) * -9) calc(var(--card-h) * -1); }
+.card-10-2 { background-position: calc(var(--card-w) * -9) calc(var(--card-h) * -2); }
+.card-10-3 { background-position: calc(var(--card-w) * -9) calc(var(--card-h) * -3); }
+.card-11-0 { background-position: calc(var(--card-w) * -10) 0; }
+.card-11-1 { background-position: calc(var(--card-w) * -10) calc(var(--card-h) * -1); }
+.card-11-2 { background-position: calc(var(--card-w) * -10) calc(var(--card-h) * -2); }
+.card-11-3 { background-position: calc(var(--card-w) * -10) calc(var(--card-h) * -3); }
+.card-12-0 { background-position: calc(var(--card-w) * -11) 0; }
+.card-12-1 { background-position: calc(var(--card-w) * -11) calc(var(--card-h) * -1); }
+.card-12-2 { background-position: calc(var(--card-w) * -11) calc(var(--card-h) * -2); }
+.card-12-3 { background-position: calc(var(--card-w) * -11) calc(var(--card-h) * -3); }
+.card-13-0 { background-position: calc(var(--card-w) * -12) 0; }
+.card-13-1 { background-position: calc(var(--card-w) * -12) calc(var(--card-h) * -1); }
+.card-13-2 { background-position: calc(var(--card-w) * -12) calc(var(--card-h) * -2); }
+.card-13-3 { background-position: calc(var(--card-w) * -12) calc(var(--card-h) * -3); }
+.card-16-0 { background-position: calc(var(--card-w) * -1) calc(var(--card-h) * -4); }
+.card-17-0 { background-position: 0 calc(var(--card-h) * -4); }
 .card-unknow {
-  background-position: -180px -480px;
+  background-position: calc(var(--card-w) * -2) calc(var(--card-h) * -4);
   /* 牌背增加金色描边 */
   box-shadow: 0 4px 10px rgba(0,0,0,0.4), inset 0 0 0 2px rgba(212,168,90,0.25);
 }
@@ -1553,24 +1556,97 @@ button.btn-ghost {
 .msg-success { color: var(--jade-300); text-shadow: 0 0 12px rgba(141,213,196,0.4); }
 .msg-fail    { color: var(--vermilion-400); text-shadow: 0 0 12px rgba(232,90,79,0.4); }
 
-/* GAME_OVER 弹窗内的累计积分块 */
-.go-board-title {
-  font-family: var(--font-brush);
-  font-size: 16px;
-  letter-spacing: 0.2em;
-  color: var(--gold);
-  margin: 14px 0 6px;
-  border-top: 1px dashed rgba(208,168,92,0.4);
-  padding-top: 10px;
+/* GAME_OVER 弹窗内的输赢 / 累计积分块 */
+.round-result-panel {
+  width: min(360px, calc(100vw - 64px));
+  color: var(--text);
 }
+.round-summary {
+  margin: 2px 0 10px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+.round-delta-list,
+.go-board {
+  display: grid;
+  gap: 6px;
+}
+.round-delta-list {
+  margin-top: 8px;
+}
+.round-delta-row,
 .go-board-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 2px 4px;
-  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.045);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
 }
-.go-board-num { font-family: var(--font-brush); font-size: 16px; letter-spacing: 0.05em; }
-.go-board-num.pos { color: var(--gold); }
-.go-board-num.neg { color: var(--vermilion-400); }
+.round-delta-row.won {
+  border-color: rgba(212,168,90,0.28);
+  background: rgba(212,168,90,0.08);
+}
+.round-delta-row.lost {
+  border-color: rgba(232,90,79,0.22);
+  background: rgba(232,90,79,0.06);
+}
+.round-player,
+.go-board-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.round-player b,
+.go-board-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--gold-100);
+  font-size: 14px;
+  font-weight: 700;
+}
+.round-player em {
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+.round-delta-num,
+.go-board-num {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+.round-delta-num.pos,
+.go-board-num.pos {
+  color: var(--gold-300);
+  text-shadow: 0 0 10px rgba(212,168,90,0.34);
+}
+.round-delta-num.neg,
+.go-board-num.neg {
+  color: var(--vermilion-400);
+  text-shadow: 0 0 10px rgba(232,90,79,0.28);
+}
+.go-board-title {
+  margin: 14px 0 7px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(208,168,92,0.32);
+  color: var(--gold-300);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
 
 .stats-panel {
   width: min(720px, 94vw);
@@ -1685,45 +1761,71 @@ button.btn-ghost {
   top: 92px;
   left: 12px;
   z-index: 25;
-  width: 216px;
+  width: 208px;
   max-width: calc(var(--table-left-safe) - 32px);
-  padding: 10px 14px 12px;
-  background: linear-gradient(180deg, rgba(14,36,34,0.92), rgba(8,22,20,0.94));
-  border: 1px solid rgba(208,168,92,0.45);
-  border-radius: 12px;
+  padding: 9px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(11,30,28,0.94), rgba(7,18,18,0.96)),
+    radial-gradient(140px 80px at 18% 0%, rgba(212,168,90,0.15), transparent 72%);
+  border: 1px solid rgba(208,168,92,0.34);
+  border-radius: 8px;
   box-shadow:
     0 0 0 1px rgba(0,0,0,0.4) inset,
-    0 6px 24px rgba(0,0,0,0.45),
-    0 0 16px rgba(141,213,196,0.12);
+    0 10px 28px rgba(0,0,0,0.36),
+    0 0 18px rgba(141,213,196,0.08);
   color: #d6e8df;
   user-select: none;
   pointer-events: none;
 }
 .score-board-title {
-  font-family: var(--font-brush);
-  font-size: 16px;
-  letter-spacing: 0.4em;
-  color: var(--gold);
-  text-align: center;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px dashed rgba(208,168,92,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 7px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--gold-300);
+  text-align: left;
+}
+.score-board-title::after {
+  content: "合计";
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-mute);
 }
 .score-board-row {
-  display: flex; justify-content: space-between; align-items: center;
-  gap: 12px;
-  padding: 3px 2px;
-  font-size: 13px;
-  letter-spacing: 0.05em;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.score-board-row:nth-child(odd) {
+  background: rgba(255,255,255,0.035);
 }
 .score-board-name {
-  max-width: 110px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
 }
 .score-board-num {
-  font-family: var(--font-brush);
-  font-size: 17px;
-  min-width: 44px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 800;
+  min-width: 46px;
   text-align: right;
   color: #d6e8df;
 }
@@ -1734,27 +1836,30 @@ button.btn-ghost {
   top: 92px;
   left: 12px;
   z-index: 26;
-  width: 216px;
+  width: 208px;
   max-width: calc(var(--table-left-safe) - 32px);
-  padding: 12px 14px;
+  padding: 9px;
+  overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(14,36,34,0.94), rgba(8,22,20,0.96)),
-    radial-gradient(180px 120px at 20% 0%, rgba(212,168,90,0.14), transparent 70%);
-  border: 1px solid rgba(208,168,92,0.45);
-  border-radius: 14px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.42), 0 0 18px rgba(141,213,196,0.10);
+    linear-gradient(180deg, rgba(11,30,28,0.94), rgba(7,18,18,0.96)),
+    radial-gradient(140px 80px at 18% 0%, rgba(212,168,90,0.15), transparent 72%);
+  border: 1px solid rgba(208,168,92,0.34);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.36), 0 0 18px rgba(141,213,196,0.08);
   color: #d6e8df;
   user-select: none;
+  pointer-events: none;
 }
 .guandan-board-title {
-  font-family: var(--font-brush);
-  font-size: 17px;
-  letter-spacing: 0.28em;
-  color: var(--gold);
-  text-align: center;
-  padding-bottom: 7px;
-  margin-bottom: 8px;
-  border-bottom: 1px dashed rgba(208,168,92,0.35);
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--gold-300);
+  text-align: left;
+  padding: 0 2px 6px;
+  margin-bottom: 7px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 .guandan-level {
   display: flex;
@@ -1775,12 +1880,13 @@ button.btn-ghost {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  padding: 8px 0;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  padding: 7px 8px;
+  border-radius: 7px;
 }
+.guandan-team-row:nth-child(odd) { background: rgba(255,255,255,0.035); }
 .guandan-team-row strong {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--jade-100);
 }
 .guandan-teams {
@@ -2570,25 +2676,62 @@ button.btn-ghost {
 
 /* 让 layer.js 弹窗融入主题（不影响其交互） */
 .layui-layer.layui-layer-page,
+.layui-layer.layui-layer-dialog,
 .layui-layer.layui-layer-msg,
 .layui-layer.layui-layer-iconext,
 .layui-layer.layui-layer-loading {
-  border-radius: var(--radius-md) !important;
+  border-radius: 8px !important;
   border: 1px solid var(--glass-border-gold) !important;
   box-shadow: var(--shadow-lg) !important;
-  background: rgba(15, 31, 34, 0.92) !important;
+  background:
+    linear-gradient(180deg, rgba(12, 31, 29, 0.97), rgba(6, 18, 18, 0.98)),
+    radial-gradient(220px 160px at 18% 0%, rgba(212,168,90,0.12), transparent 72%) !important;
   color: var(--text) !important;
   -webkit-backdrop-filter: blur(16px);
           backdrop-filter: blur(16px);
+  overflow: hidden;
 }
 .layui-layer .layui-layer-title {
   background: rgba(255,255,255,0.04) !important;
   color: var(--gold-300) !important;
   border-bottom: 1px solid var(--glass-border) !important;
   font-family: var(--font-serif) !important;
-  letter-spacing: 0.2em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
 }
-.layui-layer .layui-layer-content { color: var(--text) !important; }
+.layui-layer .layui-layer-content {
+  color: var(--text) !important;
+  background: transparent !important;
+}
+.layui-layer-dialog .layui-layer-content {
+  padding: 18px 20px 10px !important;
+  line-height: 1.5 !important;
+}
+.layui-layer-dialog .layui-layer-setwin .layui-layer-close1 {
+  filter: invert(1) opacity(0.75);
+}
+.layui-layer-dialog .layui-layer-btn {
+  padding: 8px 20px 16px !important;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.layui-layer-dialog .layui-layer-btn a {
+  min-width: 74px;
+  height: 32px;
+  line-height: 32px;
+  margin-left: 8px;
+  padding: 0 16px;
+  border: 1px solid rgba(208,168,92,0.34) !important;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06) !important;
+  color: var(--text-soft) !important;
+  font-family: var(--font-sans);
+  font-weight: 700;
+}
+.layui-layer-dialog .layui-layer-btn .layui-layer-btn0 {
+  background: var(--grad-gold-shine) !important;
+  color: var(--ink-900) !important;
+  border-color: rgba(251,241,207,0.65) !important;
+}
 .layui-layer-msg { color: var(--text) !important; }
 
 /* ========== AI / 观战 / 静音 / 特效 ========== */

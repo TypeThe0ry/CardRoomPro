@@ -6,12 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
   <meta name="theme-color" content="#0e2422">
+  <link rel="icon" href="data:,">
   <title>雀阁 · 纸牌房</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=layout-20260627-1">
+  <link rel="stylesheet" href="/css/style.css?v=layout-20260705-2">
 </head>
 
 <body class="theme-guofeng">
@@ -964,27 +965,36 @@
               if (pid === dizhuId) delta = (dizhuWon ? 1 : -1) * unit * 2;
               else delta = (dizhuWon ? -1 : 1) * unit;
               this.bumpScore(name, delta);
-              roundDelta.push({ name: name, delta: delta, isDizhu: pid === dizhuId });
+              roundDelta.push({
+                name: name,
+                delta: delta,
+                isDizhu: pid === dizhuId,
+                won: data.winner.indexOf(pid) > -1
+              });
             }.bind(this));
             this.lastRoundDelta = roundDelta;
 
-            var content = '<div class="msg-title msg-' + (icon === 6 ? 'success' : 'fail') + '">' + msg + '</div><div>本局游戏统计如下：</div>';
-            var score = data.score * data.ratio * 2;
-            data.winner.forEach(function (id) {
-              var direct = this.getDirectionByPosId(id);
-              content += '<div>' + this.posState[direct].name + '：+' + (score / data.winner.length) + '分</div>';
-            }.bind(this));
-            data.loser.forEach(function (id) {
-              var direct = this.getDirectionByPosId(id);
-              content += '<div>' + this.posState[direct].name + '：-' + (score / data.loser.length) + '分</div>';
-            }.bind(this));
+            var esc = this.htmlEscape;
+            var content = '<div class="round-result-panel">' +
+              '<div class="msg-title msg-' + (icon === 6 ? 'success' : 'fail') + '">' + esc(msg) + '</div>' +
+              '<div class="round-summary">底分 ' + esc(data.score) + ' / 倍率 ' + esc(data.ratio) + '，本局输赢如下</div>' +
+              '<div class="round-delta-list">';
+            roundDelta.forEach(function (row) {
+              var sign = row.delta > 0 ? '+' : '';
+              content += '<div class="round-delta-row ' + (row.won ? 'won' : 'lost') + '">' +
+                '<span class="round-player"><b>' + esc(row.name) + '</b><em>' + (row.isDizhu ? '地主' : '农民') + '</em></span>' +
+                '<span class="round-delta-num ' + (row.delta >= 0 ? 'pos' : 'neg') + '">' + sign + esc(row.delta) + '分</span>' +
+                '</div>';
+            });
+            content += '</div>';
 
             // —— 累计积分一览 ——
-            content += '<div class="go-board-title">本桌累计积分</div>';
+            content += '<div class="go-board-title">本桌累计积分</div><div class="go-board">';
             this.scoreList.forEach(function (row) {
               var sign = row.total > 0 ? '+' : '';
-              content += '<div class="go-board-row">' + row.name + ' <span class="go-board-num ' + (row.total >= 0 ? 'pos' : 'neg') + '">' + sign + row.total + '</span></div>';
+              content += '<div class="go-board-row"><span class="go-board-name">' + esc(row.name) + '</span><span class="go-board-num ' + (row.total >= 0 ? 'pos' : 'neg') + '">' + sign + esc(row.total) + '</span></div>';
             });
+            content += '</div></div>';
 
 
             layer.open({
@@ -1043,6 +1053,18 @@
         }.bind(this));
       },
       methods: {
+        htmlEscape: function (value) {
+          return String(value == null ? '' : value).replace(/[&<>"'\/]/g, function (ch) {
+            return ({
+              '&': '&amp;',
+              '<': '&lt;',
+              '>': '&gt;',
+              '"': '&quot;',
+              "'": '&#39;',
+              '/': '&#47;'
+            })[ch];
+          });
+        },
         openStats: function () {
           var self = this;
           var escapeHtml = function (value) {
