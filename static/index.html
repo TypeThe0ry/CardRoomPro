@@ -1117,7 +1117,8 @@
             type: 1,
             title: '战绩 / 积分榜',
             shadeClose: true,
-            area: ['min(760px, 94vw)', 'auto'],
+            // 固定可视高度，避免 layer.js 在 auto 高度下把积分榜内容压缩成窄条。
+            area: ['min(1100px, 94vw)', 'min(760px, 86vh)'],
             content: html
           });
           var scoreCard = function (gt) {
