@@ -1653,7 +1653,7 @@ button.btn-ghost {
 }
 
 .stats-panel {
-  width: 100%;
+  width: min(820px, 94vw);
   max-height: none;
   box-sizing: border-box;
   overflow: auto;
@@ -1685,6 +1685,7 @@ button.btn-ghost {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 12px;
 }
 .stats-card,
@@ -2160,7 +2161,7 @@ button.btn-ghost {
 }
 @media (max-width: 768px) {
   .stats-panel {
-    width: 100%;
+    width: 94vw;
     max-height: none;
     padding: 12px;
   }
