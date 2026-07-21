@@ -1247,17 +1247,19 @@ button.btn-ghost {
 }
 .player-wrapper.player-self {
   position: fixed;
-  bottom: 132px;
-  left: 22px;
+  /* 自己固定在左下角，不占用左右玩家的手牌区域。 */
+  bottom: 24px;
+  left: 24px;
   transform: none;
   z-index: 20;
 }
 .player-self-ctx {
   position: fixed;
-  left: clamp(18px, calc(50vw - 370px), 430px);
+  /* 对局中同样固定到左下角，避开左家手牌和中央出牌区。 */
+  left: 24px;
   right: auto;
   top: auto;
-  bottom: calc(44px + var(--card-h) + 10px);
+  bottom: 24px;
   width: 96px;
   height: 108px;
   z-index: 24;
@@ -1281,19 +1283,21 @@ button.btn-ghost {
 }
 .players > .player-self-ctx {
   position: fixed !important;
-  left: clamp(18px, calc(50vw - 370px), 430px) !important;
+  left: 24px !important;
   right: auto !important;
   top: auto !important;
-  bottom: calc(44px + var(--card-h) + 10px) !important;
+  bottom: 24px !important;
   transform: none !important;
 }
 .room-guandan .player-self-ctx,
 .room-guandan .players > .player-self-ctx {
-  left: clamp(18px, calc(50vw - 430px), 420px) !important;
+  left: 24px !important;
+  bottom: 24px !important;
 }
 .room-playing:not(.room-guandan) .player-self-ctx,
 .room-playing:not(.room-guandan) .players > .player-self-ctx {
-  left: clamp(18px, calc(50vw - 370px), 430px) !important;
+  left: 24px !important;
+  bottom: 24px !important;
 }
 
 .room-playing .msg-box {
