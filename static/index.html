@@ -1117,8 +1117,7 @@
             type: 1,
             title: '战绩 / 积分榜',
             shadeClose: true,
-            // 固定可视高度，避免 layer.js 在 auto 高度下把积分榜内容压缩成窄条。
-            area: ['min(1100px, 94vw)', 'min(760px, 86vh)'],
+            area: ['min(820px, 94vw)', 'auto'],
             content: html
           });
           var scoreCard = function (gt) {
@@ -1141,11 +1140,34 @@
             }).join('');
             return '<div class="stats-board"><h4>' + labels[gt] + ' TOP 20</h4><table><thead><tr><th>#</th><th>玩家</th><th>积分</th><th>胜率</th><th>局数</th></tr></thead><tbody>' + trs + '</tbody></table></div>';
           };
+          var fitStatsDialog = function () {
+            requestAnimationFrame(function () {
+              var layerEl = document.getElementById('layui-layer' + idx);
+              var panel = document.getElementById('stats-panel');
+              if (!layerEl || !panel) return;
+              var content = layerEl.querySelector('.layui-layer-content');
+              var title = layerEl.querySelector('.layui-layer-title');
+              if (!content) return;
+              var titleHeight = title ? title.offsetHeight : 0;
+              var maxContentHeight = Math.max(220, Math.floor(window.innerHeight * 0.78) - titleHeight);
+
+              // 先恢复自然高度，再按内容高度（及视口上限）设置弹窗。
+              panel.style.height = 'auto';
+              content.style.height = 'auto';
+              layerEl.style.height = 'auto';
+              var contentHeight = Math.min(panel.scrollHeight, maxContentHeight);
+              content.style.height = contentHeight + 'px';
+              panel.style.height = '100%';
+              layerEl.style.height = (titleHeight + contentHeight) + 'px';
+              layerEl.style.top = Math.max(12, Math.round((window.innerHeight - titleHeight - contentHeight) / 2)) + 'px';
+            });
+          };
           var fill = function () {
             var mine = document.getElementById('stats-mine');
             var top = document.getElementById('stats-top');
             if (mine) mine.innerHTML = scoreCard('doudizhu') + scoreCard('guandan');
             if (top) top.innerHTML = board('doudizhu') + board('guandan');
+            fitStatsDialog();
           };
           var tries = 0;
           var timer = setInterval(function () {
