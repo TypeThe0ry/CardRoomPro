@@ -10,13 +10,14 @@
  *   DB_TABLE_PREFIX    Discuz 表前缀（默认 pre_）
  *   DB_DISABLE         设为 1 时关闭持久化（仅内存）
  *
- * 启动时会自动建表（如果不存在）：<前缀>doudizhu_score / <前缀>guandan_score
+ * 启动时会自动建表（如果不存在）：<前缀>doudizhu_score / <前缀>guandan_score / <前缀>mahjong_score
  */
 
 const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || 'pre_';
 const TABLES = {
   doudizhu: `${TABLE_PREFIX}doudizhu_score`,
   guandan: `${TABLE_PREFIX}guandan_score`,
+  mahjong: `${TABLE_PREFIX}mahjong_score`,
 };
 const TABLE = TABLES.doudizhu;
 

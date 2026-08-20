@@ -132,6 +132,22 @@
     }
   }
 
+  // 麻将牌碰撞：高频陶瓷瞬态 + 木桌低频回响。
+  function ceramicClack(delay, pitch, peak) {
+    delay = delay || 0;
+    pitch = pitch || 1680;
+    peak = peak == null ? 0.32 : peak;
+    playTone(pitch, 0.055, {
+      wave: 'triangle', glide: pitch * 0.72, delay: delay,
+      attack: 0.001, decay: 0.012, sustain: 0.12, release: 0.045, peak: peak
+    });
+    playTone(pitch * 1.82, 0.035, {
+      wave: 'sine', delay: delay + 0.002,
+      attack: 0.001, decay: 0.008, sustain: 0.08, release: 0.028, peak: peak * 0.42
+    });
+    playNoise(0.042, { filter: 2800, filterType: 'bandpass', peak: peak * 0.34, delay: delay });
+  }
+
   // —— 命名音效 ——
   var SOUNDS = {
     play: function () {
@@ -195,6 +211,50 @@
     },
     tick: function () {
       playTone(1500, 0.04, { wave: 'square', peak: 0.16 });
+    },
+    'mahjong-select': function () {
+      ceramicClack(0, 2050, 0.18);
+    },
+    'mahjong-draw': function () {
+      ceramicClack(0, 1540, 0.28);
+      playTone(185, 0.08, { wave: 'sine', delay: 0.012, glide: 125, peak: 0.12, release: 0.07 });
+    },
+    'mahjong-discard': function () {
+      ceramicClack(0, 1920, 0.46);
+      playNoise(0.09, { filter: 210, peak: 0.23, delay: 0.018 });
+      playTone(116, 0.11, { wave: 'sine', delay: 0.014, glide: 72, peak: 0.2, release: 0.1 });
+    },
+    'mahjong-shuffle': function () {
+      for (var i = 0; i < 18; i++) {
+        ceramicClack(i * 0.026 + Math.random() * 0.022, 1250 + Math.random() * 1150, 0.11 + Math.random() * 0.1);
+      }
+      playNoise(0.52, { filter: 1450, filterType: 'bandpass', peak: 0.12 });
+    },
+    'mahjong-chi': function () {
+      ceramicClack(0, 1650, 0.36);
+      ceramicClack(0.075, 1880, 0.34);
+      playTone(660, 0.15, { wave: 'triangle', delay: 0.04, peak: 0.16 });
+    },
+    'mahjong-peng': function () {
+      ceramicClack(0, 1780, 0.42);
+      ceramicClack(0.055, 1780, 0.4);
+      playTone(440, 0.2, { wave: 'triangle', delay: 0.02, glide: 350, peak: 0.2 });
+    },
+    'mahjong-gang': function () {
+      ceramicClack(0, 1580, 0.42);
+      ceramicClack(0.05, 1760, 0.42);
+      ceramicClack(0.1, 1960, 0.44);
+      playNoise(0.24, { filter: 180, peak: 0.35, delay: 0.08 });
+      playTone(92, 0.3, { wave: 'sine', delay: 0.08, glide: 48, peak: 0.34, release: 0.28 });
+    },
+    'mahjong-hu': function () {
+      ceramicClack(0, 2020, 0.5);
+      playBell(392, 1.25);
+      playBell(587, 1.45);
+      var huNotes = [523, 659, 784, 1046];
+      for (var i = 0; i < huNotes.length; i++) {
+        playTone(huNotes[i], 0.3, { wave: 'triangle', delay: 0.12 + i * 0.09, peak: 0.26 });
+      }
     }
   };
 

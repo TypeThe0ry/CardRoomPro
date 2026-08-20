@@ -72,7 +72,7 @@
           <div>
             <div class="hall-kicker">多人纸牌 · 动态房间</div>
             <h1>{{gameTypeName(selectedGameType)}}大厅</h1>
-            <p>{{selectedGameType === 'guandan' ? '掼蛋是一项流行于江苏及周边地区的扑克牌游戏。游戏用两副108张牌（连鬼牌），由4位玩家进行，相对的两人为一方。基本的规则是，以更大的牌型压制对方，以第一位出完牌的玩家为上游，并且升级，以先打过A级的一方为胜。' : '三人经典斗地主，支持 AI 陪玩、智囊推荐和观战。'}}</p>
+          <p>{{gameDescription(selectedGameType)}}</p>
           </div>
           <div class="hall-stats">
             <div>
@@ -94,6 +94,7 @@
           <div class="mode-tabs">
             <button type="button" :class="{active:selectedGameType==='doudizhu'}" @click="selectedGameType='doudizhu'">斗地主</button>
             <button type="button" :class="{active:selectedGameType==='guandan'}" @click="selectedGameType='guandan'">掼蛋</button>
+            <button type="button" :class="{active:selectedGameType==='mahjong'}" @click="selectedGameType='mahjong'">麻将</button>
           </div>
           <button type="button" class="btn-vermilion" @click="createRoom(false)">开公开房</button>
           <button type="button" class="btn-ghost" @click="createRoom(true)">开私密房</button>
@@ -135,7 +136,7 @@
       </div>
     </div>
     <!-- 房间 -->
-    <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec, 'room-guandan': gameType === 'guandan', 'room-playing': roomState.state > 0 && roomState.state < 3, 'room-waiting': roomState.state === 0 || roomState.state === 3}">
+    <div class="full-screen room" v-if="where === 2" :class="{'room-spec': isSpec, 'room-guandan': gameType === 'guandan', 'room-mahjong': gameType === 'mahjong', 'room-playing': roomState.state > 0 && roomState.state < 3, 'room-waiting': roomState.state === 0 || roomState.state === 3}">
       <button class="btn-exit-room" @click="exitRoom">{{isSpec ? '退出观战' : '返回大厅'}}</button>
       <span v-if="myUser && myUser.username" class="user-badge user-badge-room" :title="'已用 Discuz 账号登录 (uid=' + myUser.uid + ')'">{{myUser.username}}</span>
       <div v-if="isSpec" class="spec-badge">观 战 模 式</div>
@@ -146,7 +147,7 @@
           <span v-if="gameType === 'guandan'">打 {{guandanLevelLabel}}</span>
         </div>
         <div class="room-top-actions">
-          <span>{{currentRoomPlayers}} / {{gameType === 'guandan' ? 4 : 3}} 人</span>
+          <span>{{currentRoomPlayers}} / {{gameType === 'doudizhu' ? 3 : 4}} 人</span>
           <button type="button" class="btn-ghost" @click="copyRoomCode(roomCode || deskId)">复制房号</button>
           <button type="button" class="btn-ghost" @click="openRules">规则</button>
         </div>
@@ -182,7 +183,80 @@
         </div>
       </div>
 
-      <div class="btn-group" v-if="!isSpec && roomState.state > 0 && roomState.state < 3 && roomState.ctxPos === 'self'">
+      <!-- 麻将牌桌：四方牌墙、四方牌河与真实花色牌面。 -->
+      <div class="mahjong-table" v-if="gameType === 'mahjong'">
+        <div class="mahjong-info-panel">
+          <span class="mahjong-kicker">雀阁牌局</span>
+          <strong>牌墙 {{mahjong.wallCount}} 张</strong>
+          <span v-if="roomState.state === 0">等待诸位入座</span>
+          <span v-else-if="roomState.state === 3">本局已收官，可再次准备</span>
+          <span v-else>{{mahjongTurnText}}</span>
+        </div>
+
+        <div class="mahjong-seat mahjong-seat-top" :class="{active: roomState.ctxPos === 'top'}">
+          <div class="mahjong-seat-head"><i class="mahjong-seat-wind">{{mahjongWindForDirection('top')}}</i><span>{{posState.top.name}}</span><b v-if="posIdForDirection('top') === 0">庄</b><em>{{mahjongHandCount('top')}}</em></div>
+          <div class="mahjong-back-row"><i v-for="n in mahjongBackCount('top')" :key="'top-' + n"></i></div>
+          <div class="mahjong-meld-row"><span v-for="(meld, index) in mahjong.melds.top" :key="'top-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'tm-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
+        </div>
+        <div class="mahjong-seat mahjong-seat-left" :class="{active: roomState.ctxPos === 'left'}">
+          <div class="mahjong-seat-head"><i class="mahjong-seat-wind">{{mahjongWindForDirection('left')}}</i><span>{{posState.left.name}}</span><b v-if="posIdForDirection('left') === 0">庄</b><em>{{mahjongHandCount('left')}}</em></div>
+          <div class="mahjong-back-stack"><i v-for="n in mahjongBackCount('left')" :key="'left-' + n"></i></div>
+          <div class="mahjong-meld-row"><span v-for="(meld, index) in mahjong.melds.left" :key="'left-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'lm-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
+        </div>
+        <div class="mahjong-seat mahjong-seat-right" :class="{active: roomState.ctxPos === 'right'}">
+          <div class="mahjong-seat-head"><i class="mahjong-seat-wind">{{mahjongWindForDirection('right')}}</i><span>{{posState.right.name}}</span><b v-if="posIdForDirection('right') === 0">庄</b><em>{{mahjongHandCount('right')}}</em></div>
+          <div class="mahjong-back-stack"><i v-for="n in mahjongBackCount('right')" :key="'right-' + n"></i></div>
+          <div class="mahjong-meld-row"><span v-for="(meld, index) in mahjong.melds.right" :key="'right-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'rm-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
+        </div>
+
+        <div class="mahjong-board">
+          <div class="mahjong-wall mahjong-wall-top"><i v-for="n in 17" :key="'wall-top-' + n"></i></div>
+          <div class="mahjong-wall mahjong-wall-left"><i v-for="n in 17" :key="'wall-left-' + n"></i></div>
+          <div class="mahjong-wall mahjong-wall-right"><i v-for="n in 17" :key="'wall-right-' + n"></i></div>
+          <div class="mahjong-wall mahjong-wall-bottom"><i v-for="n in 17" :key="'wall-bottom-' + n"></i></div>
+
+          <div class="mahjong-river-zone mahjong-river-top">
+            <span v-for="(tile, index) in mahjong.discards.top" :key="'td-' + index" class="mahjong-tile mahjong-river-tile" :class="[{last: isMahjongLastDiscard('top', index)}]" :title="mahjongTileLabel(tile)"><mahjong-tile-face :tile="tile"></mahjong-tile-face></span>
+          </div>
+          <div class="mahjong-river-zone mahjong-river-left">
+            <span v-for="(tile, index) in mahjong.discards.left" :key="'ld-' + index" class="mahjong-tile mahjong-river-tile" :class="[{last: isMahjongLastDiscard('left', index)}]" :title="mahjongTileLabel(tile)"><mahjong-tile-face :tile="tile"></mahjong-tile-face></span>
+          </div>
+          <div class="mahjong-river-zone mahjong-river-right">
+            <span v-for="(tile, index) in mahjong.discards.right" :key="'rd-' + index" class="mahjong-tile mahjong-river-tile" :class="[{last: isMahjongLastDiscard('right', index)}]" :title="mahjongTileLabel(tile)"><mahjong-tile-face :tile="tile"></mahjong-tile-face></span>
+          </div>
+          <div class="mahjong-river-zone mahjong-river-self">
+            <span v-for="(tile, index) in mahjong.discards.self" :key="'sd-' + index" class="mahjong-tile mahjong-river-tile" :class="[{last: isMahjongLastDiscard('self', index)}]" :title="mahjongTileLabel(tile)"><mahjong-tile-face :tile="tile"></mahjong-tile-face></span>
+          </div>
+
+          <div class="mahjong-compass">
+            <i class="wind-top" :class="{active: roomState.ctxPos === 'top'}">{{mahjongWindForDirection('top')}}</i>
+            <i class="wind-left" :class="{active: roomState.ctxPos === 'left'}">{{mahjongWindForDirection('left')}}</i>
+            <i class="wind-right" :class="{active: roomState.ctxPos === 'right'}">{{mahjongWindForDirection('right')}}</i>
+            <i class="wind-self" :class="{active: roomState.ctxPos === 'self'}">{{mahjongWindForDirection('self')}}</i>
+            <span><strong>{{mahjong.wallCount}}</strong><small>余张</small></span>
+          </div>
+        </div>
+
+        <div v-if="!isSpec && roomState.state > 0 && roomState.state < 3" class="mahjong-hand-wrap" :class="{active: roomState.ctxPos === 'self'}">
+          <div class="mahjong-self-label"><i class="mahjong-seat-wind">{{mahjongWindForDirection('self')}}</i><span>{{posState.self.name}}</span><b v-if="posIdForDirection('self') === 0">庄</b><em>{{mahjongHandCount('self')}} 张</em></div>
+          <div v-if="mahjong.melds.self.length" class="mahjong-meld-row mahjong-self-melds"><span v-for="(meld, index) in mahjong.melds.self" :key="'self-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'sm-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
+          <div class="mahjong-hand">
+            <button v-for="(tile, index) in posState.self.cards" :key="'self-tile-' + index + '-' + tile.value" type="button" class="mahjong-tile mahjong-hand-tile" :class="[{selected: tile.selected}]" :title="mahjongTileLabel(tile)" :aria-label="mahjongTileLabel(tile)" @click="selectMahjongTile(tile)"><mahjong-tile-face :tile="tile"></mahjong-tile-face></button>
+          </div>
+        </div>
+
+        <div class="mahjong-actions" v-if="!isSpec && roomState.state > 0 && roomState.state < 3 && (roomState.ctxPos === 'self' || mahjong.claimActions.length)">
+          <span class="clock">{{roomState.timeout}}</span>
+          <button v-if="mahjong.claimActions.indexOf('hu') > -1" type="button" class="btn btn-vermilion" @click="mahjongAction('hu')">胡</button>
+          <button v-if="mahjong.claimActions.indexOf('gang') > -1" type="button" class="btn btn-jade" @click="mahjongAction('gang')">杠</button>
+          <button v-if="mahjong.claimActions.indexOf('peng') > -1" type="button" class="btn btn-call" @click="mahjongAction('peng')">碰</button>
+          <button v-if="mahjong.claimActions.indexOf('chi') > -1" type="button" class="btn btn-call" @click="mahjongAction('chi')">吃</button>
+          <button v-if="mahjong.claimActions.indexOf('pass') > -1" type="button" class="btn btn-ghost" @click="mahjongAction('pass')">过</button>
+          <button v-if="roomState.ctxPos === 'self' && mahjong.selectedTile && mahjong.action === 'discard'" type="button" class="btn btn-vermilion" @click="mahjongDiscard">出牌</button>
+        </div>
+      </div>
+
+      <div class="btn-group" v-if="gameType !== 'mahjong' && !isSpec && roomState.state > 0 && roomState.state < 3 && roomState.ctxPos === 'self'">
         <span class="clock">{{roomState.timeout}}</span>
         <template v-if="roomState.state === 1">
           <button class="btn btn-call" v-for="score in roomState.ctxScore" @click="callScore(score)">{{score}}分</button>
@@ -200,13 +274,13 @@
 
       <!-- 等待区操作：召唤AI / 请走AI -->
       <div class="bot-bar" v-if="!isSpec && (roomState.state === 0 || roomState.state === 3)">
-        <button v-if="hasEmptySeat" class="btn-bot btn-bot-add" type="button" @click="addBots">{{gameType === 'guandan' ? '召 唤 A I 补 位' : '召 唤 A I 对 手'}}</button>
+        <button v-if="hasEmptySeat" class="btn-bot btn-bot-add" type="button" @click="addBots">{{gameType === 'doudizhu' ? '召 唤 A I 对 手' : '召 唤 A I 补 位'}}</button>
         <button v-if="hasBotSeat" class="btn-bot btn-bot-remove" type="button" @click="removeBots">请 走 A I</button>
       </div>
 
       <div v-if="isSpec && roomState.state === 0" class="spec-tip">本桌正在准备中，待开局后可观战。</div>
 
-      <div class="card-groups" v-if="roomState.state">
+      <div class="card-groups" v-if="gameType !== 'mahjong' && roomState.state">
 
         <!-- 自己的牌列表 -->
         <div class="card-group card-group-self" :style="handGroupStyle(posState.self.cards, 'self')" v-if="!isSpec && !(roomState.state === 3 && posState.self.state === 2)">
@@ -262,7 +336,7 @@
       </div>
 
       <!-- 出牌区域 -->
-      <div class="screen-center">
+      <div class="screen-center" v-if="gameType !== 'mahjong'">
         <!-- 左家的出牌区域 -->
         <div class="card-ctx card-ctx-left" v-if="(roomState.state === 2 && (posState.left.ctxCards.length || posState.left.isPass)) || (roomState.state === 1 && posState.left.callScore > -1)" :style="handGroupStyle(posState.left.ctxCards, 'ctxSide')">
           <template v-if="roomState.state === 2">
@@ -320,7 +394,7 @@
         </div>
       </div>
       <!-- 玩家头像 -->
-      <div class="players">
+      <div class="players" v-if="gameType !== 'mahjong'">
         <div class="screen-center">
           <div class="player-wrapper player-top" v-if="gameType === 'guandan' && posState.top.state" :style="topPlayerStyle">
             <div class="player-photo" :class="{'player-photo-bot': posState.top.isBot}" :style="playerPhotoStyle(posState.top)">
@@ -473,6 +547,50 @@
       return socket;
     }
 
+    var MAHJONG_TILES = [];
+    ['万', '条', '筒'].forEach(function (suit) {
+      ['一', '二', '三', '四', '五', '六', '七', '八', '九'].forEach(function (rank) {
+        MAHJONG_TILES.push({ label: rank + suit, suit: suit === '万' ? 'wan' : (suit === '条' ? 'tiao' : 'tong') });
+      });
+    });
+    ['东', '南', '西', '北'].forEach(function (label) { MAHJONG_TILES.push({ label: label, suit: 'honor' }); });
+    ['中', '发', '白'].forEach(function (label) { MAHJONG_TILES.push({ label: label, suit: 'honor' }); });
+
+    Vue.component('mahjong-tile-face', {
+      props: ['tile'],
+      computed: {
+        value: function () { return this.tile ? Number(this.tile.value) : 0; },
+        suit: function () {
+          if (this.value < 9) return 'wan';
+          if (this.value < 18) return 'tiao';
+          if (this.value < 27) return 'tong';
+          return 'honor';
+        },
+        rank: function () { return this.value < 27 ? (this.value % 9) + 1 : 0; },
+        rankText: function () { return ['一', '二', '三', '四', '五', '六', '七', '八', '九'][this.rank - 1] || ''; },
+        honorText: function () { return ['东', '南', '西', '北', '中', '發', ''][this.value - 27] || ''; },
+        cells: function () {
+          var map = {
+            1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9],
+            5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9],
+            7: [1, 3, 4, 5, 6, 7, 9], 8: [1, 2, 3, 4, 6, 7, 8, 9],
+            9: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+          };
+          return map[this.rank] || [];
+        }
+      },
+      methods: {
+        cellOn: function (n) { return this.cells.indexOf(n) > -1; }
+      },
+      template: '<span class="mahjong-face" :class="[\'mahjong-face-\' + suit, \'rank-\' + rank]">' +
+        '<template v-if="suit === \'wan\'"><b class="wan-rank">{{rankText}}</b><b class="wan-mark">萬</b></template>' +
+        '<span v-else-if="suit === \'tong\'" class="mahjong-pips"><i v-for="n in 9" :key="n" :class="[\'pip-\' + n, {on: cellOn(n)}]"></i></span>' +
+        '<span v-else-if="suit === \'tiao\'" class="mahjong-bamboos"><i v-for="n in 9" :key="n" :class="[\'bamboo-\' + n, {on: cellOn(n)}]"><b></b></i></span>' +
+        '<span v-else-if="value === 33" class="white-dragon"><i></i></span>' +
+        '<b v-else class="honor-glyph" :class="{\'dragon-red\': value === 31, \'dragon-green\': value === 32}">{{honorText}}</b>' +
+      '</span>'
+    });
+
     var vm = new Vue({
       el: "#app",
       data: function () {
@@ -505,14 +623,25 @@
           // 当前登录用户信息（仅 SSO 自动登录时填充）
           myUser: null,
           topList: [],
-          topLists: { doudizhu: [], guandan: [] },
-          myScores: { doudizhu: null, guandan: null },
+          topLists: { doudizhu: [], guandan: [], mahjong: [] },
+          myScores: { doudizhu: null, guandan: null, mahjong: null },
           posId: '',//座位号
           deskId: '',//桌号
           roomCode: '',
           gameType: 'doudizhu',
           selectedGameType: 'doudizhu',
           roomCodeInput: '',
+          mahjong: {
+            wallCount: 0,
+            action: '',
+            ctxPos: '',
+            handCounts: { 0: 0, 1: 0, 2: 0, 3: 0 },
+            discards: { self: [], left: [], right: [], top: [] },
+            melds: { self: [], left: [], right: [], top: [] },
+            claimActions: [],
+            lastDiscard: null,
+            selectedTile: null,
+          },
           guandanLevelLabel: '2',
           guandanLevelRank: 15,
           desks: [],
@@ -795,12 +924,16 @@
           //游戏开始
           this.client.on('GAME_START', function (data) {
             this.gameType = data.gameType || this.gameType || 'doudizhu';
-            this.roomState.state = this.gameType === 'guandan' ? 2 : 1;
+            this.roomState.state = (this.gameType === 'guandan' || this.gameType === 'mahjong') ? 2 : 1;
             if (this.gameType === 'guandan') {
               this.guandanLevelLabel = data.levelLabel || this.guandanLevelLabel || '2';
               this.guandanLevelRank = data.levelRank || this.rankFromLabel(this.guandanLevelLabel);
               this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
               this.roomState.ctxCard = { len: 0, key: '', type: '', ctxPos: '' };
+            }
+            if (this.gameType === 'mahjong') {
+              this.initMahjongState(data.mahjong || {});
+              this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
             }
             this.initCards(data.cards);
             this.posState.left.callScore = -1;
@@ -823,10 +956,15 @@
             this.posState.top.ctxCards = [];
             this.posState.self.ctxCards = [];
 
-            // —— 发牌音效 ——
+            // —— 发牌 / 洗牌音效 ——
             if (window.FX) {
-              FX.beep('deal');
-              setTimeout(function () { window.FX && FX.beep('deal'); }, 220);
+              if (this.gameType === 'mahjong') {
+                FX.beep('mahjong-shuffle');
+                setTimeout(function () { window.FX && FX.beep('mahjong-draw'); }, 560);
+              } else {
+                FX.beep('deal');
+                setTimeout(function () { window.FX && FX.beep('deal'); }, 220);
+              }
             }
 
           }.bind(this));
@@ -913,7 +1051,46 @@
             this.posState.self.ctxCards = cards;
           }.bind(this))
 
+          this.client.on('MAHJONG_DISCARD', function (data) {
+            if (!data || !data.card) return;
+            var direct = this.getDirectionByPosId(data.posId);
+            if (direct && this.posState[direct]) {
+              this.removeCards(direct, [data.card]);
+              this.posState[direct].cards.forEach(function (card) { card.selected = false; });
+            }
+            this.mahjong.lastDiscard = { posId: data.posId, card: data.card };
+            if (direct && this.mahjong.discards[direct]) this.mahjong.discards[direct].push(data.card);
+            this.mahjong.selectedTile = null;
+            if (window.FX) FX.beep('mahjong-discard');
+          }.bind(this));
+
+          this.client.on('MAHJONG_STATE', function (data) {
+            this.handleMahjongState(data || {});
+          }.bind(this));
+
+          this.client.on('MAHJONG_ERROR', function (data) {
+            layer.msg((data && data.msg) || '麻将操作无效');
+          }.bind(this));
+
           this.client.on('GAME_OVER', function (data) {
+            if ((data && data.gameType) === 'mahjong' || this.gameType === 'mahjong') {
+              this.startTimer(false);
+              this.roomState.state = 3;
+              this.mahjong.claimActions = [];
+              var mahjongWon = !this.isSpec && data && data.winner && data.winner.indexOf(Number(this.posId)) > -1;
+              var mahjongTitle = this.isSpec ? '本局结束' : (mahjongWon ? '恭喜你，胡牌了' : '本局有人先和');
+              var mahjongContent = '<div class="round-result-panel"><div class="msg-title msg-' + (mahjongWon || this.isSpec ? 'success' : 'fail') + '">' + this.htmlEscape(mahjongTitle) + '</div>' +
+                '<div class="round-summary">' + this.htmlEscape(data && data.draw ? '牌山摸尽，流局' : ((data && data.winType) || '基础牌型胡牌')) + '</div></div>';
+              layer.open({ icon: this.isSpec || mahjongWon ? 6 : 5, title: '麻将结果', content: mahjongContent });
+              if (window.FX) FX.beep(data && data.draw ? 'pass' : 'mahjong-hu');
+              ['left', 'right', 'top', 'self'].forEach(function (direct) {
+                if (this.posState[direct]) {
+                  this.posState[direct].state = this.posState[direct].state ? 1 : 0;
+                  this.posState[direct].isPass = false;
+                }
+              }.bind(this));
+              return;
+            }
             if ((data && data.gameType) === 'guandan' || this.gameType === 'guandan') {
               var myTeam = Number(this.posId) % 2;
               var winTeam = data.winner && data.winner.length ? data.winner[0] % 2 : -1;
@@ -1090,10 +1267,10 @@
           var formatWinRate = function (wins, gamesN) {
             return gamesN ? Math.round(formatGames(wins) * 1000 / gamesN) / 10 : 0;
           };
-          var games = ['doudizhu', 'guandan'];
-          var labels = { doudizhu: '斗地主', guandan: '掼蛋' };
-          self.topLists = { doudizhu: [], guandan: [] };
-          self.myScores = { doudizhu: null, guandan: null };
+          var games = ['doudizhu', 'guandan', 'mahjong'];
+          var labels = { doudizhu: '斗地主', guandan: '掼蛋', mahjong: '麻将' };
+          self.topLists = { doudizhu: [], guandan: [], mahjong: [] };
+          self.myScores = { doudizhu: null, guandan: null, mahjong: null };
           games.forEach(function (gt) {
             fetch('/api/score/top?gameType=' + gt + '&limit=20').then(function (r) { return r.json(); }).then(function (rows) {
               self.topLists[gt] = Array.isArray(rows) ? rows : [];
@@ -1166,7 +1343,7 @@
           var fill = function () {
             var mine = document.getElementById('stats-mine');
             var top = document.getElementById('stats-top');
-            if (mine) mine.innerHTML = scoreCard('doudizhu') + scoreCard('guandan');
+            if (mine) mine.innerHTML = scoreCard('doudizhu') + scoreCard('guandan') + scoreCard('mahjong');
             if (top) top.innerHTML = board('doudizhu') + board('guandan');
             fitStatsDialog();
           };
@@ -1215,8 +1392,15 @@
           layer.load({ type: 3 });
           this.client.emit('LOGIN', this.posState.self.name);
         },
+        gameDescription: function (gameType) {
+          if (gameType === 'guandan') return '四人两副牌，队友协作升级，适合一桌慢慢磨出默契。';
+          if (gameType === 'mahjong') return '四人麻将，摸牌、出牌、吃碰杠胡，支持 AI 补位与观战。';
+          return '三人经典斗地主，支持 AI 陪玩、智囊推荐和观战。';
+        },
         gameTypeName: function (gameType) {
-          return gameType === 'guandan' ? '掼蛋' : '斗地主';
+          if (gameType === 'guandan') return '掼蛋';
+          if (gameType === 'mahjong') return '麻将';
+          return '斗地主';
         },
         rankFromLabel: function (label) {
           if (label === 'J') return 11;
@@ -1310,10 +1494,13 @@
         },
         openRules: function () {
           var isGd = this.selectedGameType === 'guandan' || this.gameType === 'guandan';
-          var title = isGd ? '掼蛋规则' : '斗地主规则';
-          var html = isGd
+          var isMahjong = this.selectedGameType === 'mahjong' || this.gameType === 'mahjong';
+          var title = isMahjong ? '麻将规则' : (isGd ? '掼蛋规则' : '斗地主规则');
+          var html = isMahjong
+            ? '<div class="rules-panel"><h3>麻将</h3><p>四人 136 张牌，每人起手 13 张，庄家先摸牌后出牌。</p><p>轮到自己时摸一张并打出一张；可对他人刚打出的牌执行吃、碰、杠、胡或过。</p><p>本版支持基础四组面子加一对将，以及七对；自摸和放铳都会结算本局。</p></div>'
+            : (isGd
             ? '<div class="rules-panel"><h3>掼蛋</h3><p>四人两副牌，0/2 与 1/3 为对家。从 2 开始升级，红桃级牌为逢人配。</p><p>第一类：单张、对子、三连对、三同张、二连三、三带二、五张顺子。不同第一类牌型不能互压，三带二只比三同张大小。</p><p>连续牌型中 A 可作最小，也可作 K+1；例如 A2345、23456、10JQKA、AA2233、QQKKAA 均按顺序比较。</p><p>第二类：四张及以上炸弹、五张同花顺、天王炸。第二类可压任意第一类；炸弹张数优先，张数相同比点数。同花顺可压五张及以下炸弹，六张及以上炸弹更大；天王炸最大。</p><p>头游队伍按名次升级：双下 +3，二三名 +2，其余 +1。</p></div>'
-            : '<div class="rules-panel"><h3>斗地主</h3><p>三人叫分抢地主，地主拿底牌，地主一方对抗两名农民。</p><p>支持单/对/三带/顺子/连对/飞机/四带二/炸弹/王炸，炸弹和王炸翻倍。</p><p>房内可召唤 AI 对手，也可以使用智囊推荐出牌。</p></div>';
+              : '<div class="rules-panel"><h3>斗地主</h3><p>三人叫分抢地主，地主拿底牌，地主一方对抗两名农民。</p><p>支持单/对/三带/顺子/连对/飞机/四带二/炸弹/王炸，炸弹和王炸翻倍。</p><p>房内可召唤 AI 对手，也可以使用智囊推荐出牌。</p></div>');
           layer.open({
             type: 1,
             title: title,
@@ -1416,7 +1603,7 @@
         //通过posId获取是哪个方向的坐位
         getDirectionByPosId: function (posId) {
           posId = Number(posId);
-          if (this.gameType === 'guandan') {
+          if (this.gameType === 'guandan' || this.gameType === 'mahjong') {
             var pivot4 = this.isSpec ? 0 : Number(this.posId);
             var mapping4 = {
               0: { 0: 'self', 1: 'right', 2: 'top', 3: 'left' },
@@ -1627,6 +1814,17 @@
           this.lastRoundDelta = null;
           this.guandanScore = { team0: 0, team1: 0 };
           this.guandanLastOrder = [];
+          this.mahjong = {
+            wallCount: 0,
+            action: '',
+            ctxPos: '',
+            handCounts: { 0: 0, 1: 0, 2: 0, 3: 0 },
+            discards: { self: [], left: [], right: [], top: [] },
+            melds: { self: [], left: [], right: [], top: [] },
+            claimActions: [],
+            lastDiscard: null,
+            selectedTile: null,
+          };
         },
         bumpScore: function (name, delta) {
           if (!name) return;
@@ -1774,6 +1972,110 @@
             this.posState[redirection].cards = cardGroup.cards;
           }.bind(this));
         },
+        mahjongTileLabel: function (tile) {
+          if (!tile) return '';
+          var meta = MAHJONG_TILES[Number(tile.value)];
+          return tile.label || (meta && meta.label) || '牌';
+        },
+        mahjongTileClass: function (tile) {
+          var meta = tile && MAHJONG_TILES[Number(tile.value)];
+          return 'mahjong-tile-' + ((tile && tile.suit) || (meta && meta.suit) || 'honor');
+        },
+        mahjongHandCount: function (direct) {
+          if (!direct) return 0;
+          var pid = this.posIdForDirection(direct);
+          return Number(this.mahjong.handCounts[pid] || 0);
+        },
+        mahjongBackCount: function (direct) {
+          return Math.min(14, Math.max(0, this.mahjongHandCount(direct)));
+        },
+        mahjongWindForDirection: function (direct) {
+          return ['东', '南', '西', '北'][this.posIdForDirection(direct)] || '东';
+        },
+        isMahjongLastDiscard: function (direct, index) {
+          if (!this.mahjong.lastDiscard) return false;
+          var lastDirect = this.getDirectionByPosId(this.mahjong.lastDiscard.posId);
+          return lastDirect === direct && index === this.mahjong.discards[direct].length - 1;
+        },
+        posIdForDirection: function (direct) {
+          var pivot = this.isSpec ? 0 : Number(this.posId);
+          var map4 = {
+            0: { self: 0, right: 1, top: 2, left: 3 },
+            1: { self: 1, right: 2, top: 3, left: 0 },
+            2: { self: 2, right: 3, top: 0, left: 1 },
+            3: { self: 3, right: 0, top: 1, left: 2 }
+          };
+          return map4[pivot] && map4[pivot][direct] != null ? map4[pivot][direct] : 0;
+        },
+        initMahjongState: function (data) {
+          data = data || {};
+          this.mahjong.wallCount = Number(data.wallCount || 0);
+          this.mahjong.action = data.action || 'discard';
+          this.mahjong.ctxPos = data.ctxPos == null ? '' : data.ctxPos;
+          this.mahjong.handCounts = data.handCounts || { 0: 0, 1: 0, 2: 0, 3: 0 };
+          this.mahjong.claimActions = data.canActions || [];
+          this.mahjong.lastDiscard = data.lastDiscard || null;
+          var makeGroups = function (source, fallback) {
+            var groups = { self: [], left: [], right: [], top: [] };
+            for (var pid = 0; pid < 4; pid++) {
+              var direct = this.getDirectionByPosId(pid);
+              if (direct && source && source[pid]) groups[direct] = source[pid];
+            }
+            return groups;
+          }.bind(this);
+          this.mahjong.discards = makeGroups(data.discards);
+          this.mahjong.melds = makeGroups(data.melds);
+          this.mahjong.selectedTile = null;
+        },
+        handleMahjongState: function (data) {
+          if (!data) return;
+          if (data.meld && data.meld.posId != null) {
+            var meldDirect = this.getDirectionByPosId(data.meld.posId);
+            if (meldDirect && this.posState[meldDirect] && data.meld.taken) {
+              this.removeCards(meldDirect, data.meld.taken);
+            }
+            if (window.FX) FX.beep('mahjong-' + (data.meld.type === 'angang' ? 'gang' : data.meld.type));
+          }
+          if (data.drawCard && Number(data.drawFor) === Number(this.posId) && !this.isSpec) {
+            data.drawCard.selected = false;
+            this.posState.self.cards.push(data.drawCard);
+            this.posState.self.cards.sort(function (a, b) { return Number(a.value) - Number(b.value); });
+          }
+          if (data.drawFor != null && window.FX) FX.beep('mahjong-draw');
+          this.initMahjongState(data);
+          this.roomState.state = 2;
+          this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
+          this.roomState.timeout = Number(data.timeout || 30);
+          if (data.action === 'claim') this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
+          this.startTimer(function () {
+            if (this.isSpec || this.gameType !== 'mahjong') return;
+            if (this.mahjong.claimActions.indexOf('pass') > -1) {
+              this.mahjongAction('pass');
+            } else if (this.mahjong.claimActions.indexOf('hu') > -1) {
+              this.mahjongAction('hu');
+            } else if (this.roomState.ctxPos === 'self' && this.mahjong.action === 'discard' && this.posState.self.cards.length) {
+              this.client.emit('MAHJONG_ACTION', { action: 'discard', card: this.posState.self.cards[this.posState.self.cards.length - 1] });
+            }
+          });
+        },
+        selectMahjongTile: function (tile) {
+          if (this.isSpec || this.gameType !== 'mahjong' || this.roomState.ctxPos !== 'self' || this.mahjong.action !== 'discard') return;
+          this.posState.self.cards.forEach(function (card) { card.selected = false; });
+          tile.selected = true;
+          this.mahjong.selectedTile = tile;
+          if (window.FX) FX.beep('mahjong-select');
+        },
+        mahjongAction: function (action) {
+          if (this.isSpec || !action) return;
+          this.client.emit('MAHJONG_ACTION', { action: action });
+          this.mahjong.claimActions = [];
+        },
+        mahjongDiscard: function () {
+          if (this.isSpec || !this.mahjong.selectedTile) return;
+          this.client.emit('MAHJONG_ACTION', { action: 'discard', card: this.mahjong.selectedTile });
+          this.mahjong.selectedTile = null;
+          this.posState.self.cards.forEach(function (card) { card.selected = false; });
+        },
         applySpectateSnapshot: function (snap) {
           if (!snap) return;
           if (snap.gameType) this.gameType = snap.gameType;
@@ -1781,6 +2083,13 @@
           if (snap.levelRank) this.guandanLevelRank = snap.levelRank;
           // 1) 手牌（仅渲染左/右位置，self 在观战模式不显示）
           if (snap.cards) this.initCards(snap.cards);
+          if (snap.gameType === 'mahjong' && snap.mahjong) {
+            this.initMahjongState(snap.mahjong);
+            this.roomState.ctxPos = this.getDirectionByPosId(snap.mahjong.ctxPos);
+            this.roomState.state = 2;
+            this.roomState.timeout = 30;
+            return;
+          }
           // 2) 叫分历史
           if (snap.callScores) {
             Object.keys(snap.callScores).forEach(function (pid) {
@@ -1911,6 +2220,12 @@
         }
       },
       computed: {
+        mahjongTurnText: function () {
+          if (this.mahjong.action === 'claim' && this.mahjong.claimActions.length) return '有牌可操作';
+          if (this.mahjong.action === 'claim') return '等待其他玩家响应';
+          var direct = this.getDirectionByPosId(this.mahjong.ctxPos);
+          return direct === 'self' ? '轮到你出牌' : (this.getNameByPosId(this.mahjong.ctxPos) + ' 摸牌');
+        },
         topPlayerStyle: function () {
           if (this.gameType !== 'guandan') return {};
           var w = window.innerWidth || this.viewportWidth || 1280;
@@ -1962,7 +2277,7 @@
           if (this.isSpec) return false;
           if (this.posState.self.state === 0) return false;
           return (this.posState.left.state === 0) || (this.posState.right.state === 0)
-            || (this.gameType === 'guandan' && this.posState.top.state === 0);
+            || ((this.gameType === 'guandan' || this.gameType === 'mahjong') && this.posState.top.state === 0);
         },
         // 是否有 AI 在场
         hasBotSeat: function () {

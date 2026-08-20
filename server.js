@@ -55,6 +55,7 @@ app.get('/', function (req, res) {
 });
 const Game = require('./game.js');
 const GuandanGame = require('./guandan-game.js');
+const MahjongGame = require('./mahjong-game.js');
 const AISuggest = require('./static/js/ai-suggest.js').AISuggest;
 const GuandanSuggest = require('./static/js/guandan-suggest.js').GuandanSuggest;
 const db = require('./db.js');
@@ -64,6 +65,7 @@ const SCORE_BASE = Number(process.env.SCORE_BASE || 1);
 const DOU_DIZHU_PLAY_TIMEOUT = 30;
 const DOU_DIZHU_STEP_TIMEOUT = 15;
 const GUANDAN_PLAY_TIMEOUT = 45;
+const MAHJONG_PLAY_TIMEOUT = 30;
 
 // ========== 安全加固：API 防滥用 ==========
 // 设计原则：所有"加分/扣分"都只能由服务端 socket 流程里的 game.getResult() 触发，
@@ -150,6 +152,7 @@ const BOT_NAMES = ['玉狐', '青龙', '白鹭', '墨鸢', '朱雀', '碧波', '
 const GAME_TYPES = {
   doudizhu: { label: '斗地主', seats: 3 },
   guandan: { label: '掼蛋', seats: 4 },
+  mahjong: { label: '麻将', seats: 4 },
 };
 
 function normalizeGameType(gameType) {
@@ -322,6 +325,7 @@ function GameServer(port) {
   this.desks = [];
   this.gameDatas = {};
   this.botTimers = {};
+  this.mahjongClaimTimers = {};
   this.nextRoomId = 1;
 }
 const proto = {
@@ -430,6 +434,7 @@ const proto = {
     if (hasHuman) return;
     this.removeAllBots(deskId);
     this.clearBotTimer(deskId);
+    this.clearMahjongClaimTimer(deskId);
     if (this.gameDatas[deskId]) {
       this.gameDatas[deskId].init();
       delete this.gameDatas[deskId];
@@ -599,7 +604,7 @@ const proto = {
     if (this.gameDatas[deskId] === undefined) {
       this.gameDatas[deskId] = room.gameType === 'guandan'
         ? new GuandanGame({ levelRank: room.guandanLevelRank || 15 })
-        : new Game();
+        : (room.gameType === 'mahjong' ? new MahjongGame() : new Game());
     }
     const game = this.gameDatas[deskId];
     game.init();
@@ -621,6 +626,15 @@ const proto = {
         isPass: false,
         trickReset: true,
       });
+      this.scheduleBotAction(deskId);
+    } else if (room.gameType === 'mahjong') {
+      this.broadCastRoom('GAME_START', deskId, {
+        cards,
+        gameType: room.gameType,
+        ctxPos: game.getContextPosId(),
+        mahjong: game.getPublicState(),
+      });
+      this.broadcastMahjongState(deskId, { timeout: MAHJONG_PLAY_TIMEOUT });
       this.scheduleBotAction(deskId);
     } else {
       this.broadCastRoom('GAME_START', deskId, { cards, gameType: room.gameType });
@@ -681,10 +695,10 @@ const proto = {
   },
   // 根据对局结果为带 uid 的真人玩家写入积分
   recordResultToDb(deskId, result) {
-    if (!result || !db.isReady()) return;
+    if (!result || result.draw || !db.isReady()) return;
     const desk = this.getDesk(deskId);
     if (!desk) return;
-    const seats = desk.gameType === 'guandan' ? [0, 1, 2, 3] : [0, 1, 2];
+    const seats = desk.gameType === 'doudizhu' ? [0, 1, 2] : [0, 1, 2, 3];
     const landlordPosId = desk.gameType === 'doudizhu'
       ? (result.winner.length === 1 ? result.winner[0] : result.loser[0])
       : -1;
@@ -715,6 +729,76 @@ const proto = {
   clearBotTimer(deskId) {
     if (this.botTimers[deskId]) { clearTimeout(this.botTimers[deskId]); this.botTimers[deskId] = null; }
   },
+  clearMahjongClaimTimer(deskId) {
+    if (this.mahjongClaimTimers[deskId]) {
+      clearTimeout(this.mahjongClaimTimers[deskId]);
+      this.mahjongClaimTimers[deskId] = null;
+    }
+  },
+  broadcastMahjongState(deskId, options) {
+    options = options || {};
+    const game = this.gameDatas[deskId];
+    if (!game || typeof game.getPublicState !== 'function') return;
+    const state = game.getPublicState();
+    const room = this.getDesk(deskId);
+    if (!room) return;
+    this.clearMahjongClaimTimer(deskId);
+
+    this.clients.forEach(client => {
+      if (client.deskId !== deskId) return;
+      const posId = Number(client.posId);
+      const canActions = client.posId === 'spec' ? [] : (state.claimOptions[posId] || []);
+      const payload = {
+        ctxPos: state.ctxPos,
+        action: state.action,
+        wallCount: state.wallCount,
+        handCounts: state.handCounts,
+        discards: state.discards,
+        melds: state.melds,
+        lastDiscard: state.lastDiscard,
+        canActions,
+        timeout: options.timeout || MAHJONG_PLAY_TIMEOUT,
+      };
+      if (options.meld) payload.meld = options.meld;
+      if (options.discard) payload.discard = options.discard;
+      if (options.drawCard) {
+        payload.drawFor = state.ctxPos;
+        if (Number(client.posId) === Number(state.ctxPos)) payload.drawCard = options.drawCard;
+      }
+      client.socket.emit('MAHJONG_STATE', payload);
+    });
+
+    if (game.getPendingClaim() && game.getPendingClaim().eligible.length) {
+      this.mahjongClaimTimers[deskId] = setTimeout(() => {
+        const current = this.gameDatas[deskId];
+        const pending = current && current.getPendingClaim && current.getPendingClaim();
+        if (!pending) return;
+        pending.eligible.forEach(posId => {
+          if (!pending.responded[posId]) current.passClaim(posId);
+        });
+        if (current.getStatus() === 3) {
+          this.finishMahjongGame(deskId, current.getResult());
+          return;
+        }
+        this.broadcastMahjongState(deskId, { timeout: MAHJONG_PLAY_TIMEOUT });
+        this.scheduleBotAction(deskId);
+      }, MAHJONG_PLAY_TIMEOUT * 1000);
+    }
+  },
+  finishMahjongGame(deskId, result) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game || !result) return;
+    this.clearBotTimer(deskId);
+    this.clearMahjongClaimTimer(deskId);
+    this.broadCastRoom('GAME_OVER', deskId, result);
+    this.recordResultToDb(deskId, result);
+    room.positions.forEach(p => this.updatePosStatus(deskId, p.posId, 1));
+    this.updateRoomStatus(deskId, 3);
+    game.init();
+    this.rePrepareBots(deskId);
+    this.refreshLobby();
+  },
   scheduleBotAction(deskId) {
     this.clearBotTimer(deskId);
     const room = this.getDesk(deskId);
@@ -723,7 +807,11 @@ const proto = {
     if (!game) return;
     const status = game.getStatus();
     if (room.gameType === 'doudizhu' && status !== 1 && status !== 2) return;
-    if (room.gameType === 'guandan' && status !== 2) return;
+    if ((room.gameType === 'guandan' || room.gameType === 'mahjong') && status !== 2) return;
+    if (room.gameType === 'mahjong') {
+      this.scheduleMahjongBotAction(deskId);
+      return;
+    }
     const posId = game.getContextPosId();
     if (!this.isBotPos(deskId, posId)) return;
     const delay = 900 + Math.floor(Math.random() * 1100);
@@ -740,6 +828,90 @@ const proto = {
         this.botPlayCard(deskId, posId);
       }
     }, delay);
+  },
+  scheduleMahjongBotAction(deskId) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game || game.getStatus() !== 2) return;
+    this.clearBotTimer(deskId);
+    const pending = game.getPendingClaim && game.getPendingClaim();
+    let botPos = null;
+    if (pending) {
+      botPos = pending.eligible.find(posId => !pending.responded[posId] && this.isBotPos(deskId, posId));
+    } else if (this.isBotPos(deskId, game.getContextPosId())) {
+      botPos = game.getContextPosId();
+    }
+    if (botPos == null) return;
+    this.botTimers[deskId] = setTimeout(() => {
+      this.botTimers[deskId] = null;
+      this.botPlayMahjong(deskId, botPos);
+    }, 700 + Math.floor(Math.random() * 700));
+  },
+  botPlayMahjong(deskId, posId) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game || game.getStatus() !== 2 || !this.isBotPos(deskId, posId)) return;
+    const pending = game.getPendingClaim && game.getPendingClaim();
+    let ret;
+    if (pending) {
+      const options = game.getTurnOptions(posId);
+      // AI 偶尔放弃可碰的牌，优先保留牌效；胡牌和杠牌则直接执行。
+      let action = 'pass';
+      if (options.includes('hu')) action = 'hu';
+      else if (options.includes('gang') && Math.random() > 0.15) action = 'gang';
+      else if (options.includes('peng') && Math.random() > 0.28) action = 'peng';
+      else if (options.includes('chi') && Math.random() > 0.5) action = 'chi';
+      ret = action === 'pass' ? game.passClaim(posId) : game.claim(posId, action);
+      if (ret && ret.result) {
+        this.finishMahjongGame(deskId, ret.result);
+        return;
+      }
+      if (ret && ret.status && ret.meld) {
+        this.broadcastMahjongState(deskId, { meld: Object.assign({ posId, type: action }, ret.meld), drawCard: ret.drawCard, timeout: MAHJONG_PLAY_TIMEOUT });
+      } else if (ret && ret.status && !ret.waiting) {
+        this.broadcastMahjongState(deskId, { drawCard: ret.drawCard, timeout: MAHJONG_PLAY_TIMEOUT });
+      } else if (ret && ret.status && ret.waiting) {
+        this.broadcastMahjongState(deskId, { timeout: MAHJONG_PLAY_TIMEOUT });
+      }
+      if (game.getStatus() === 3) {
+        this.finishMahjongGame(deskId, game.getResult());
+        return;
+      }
+      this.scheduleMahjongBotAction(deskId);
+      return;
+    }
+
+    if (game.getContextPosId() !== Number(posId) || game.getCurrentAction() !== 'discard') return;
+    const options = game.getTurnOptions(posId);
+    if (options.includes('hu') && Math.random() > 0.08) {
+      ret = game.finishWin(posId, null, '自摸');
+      this.finishMahjongGame(deskId, ret.result);
+      return;
+    }
+    if (options.includes('gang') && Math.random() < 0.12) {
+      ret = game.concealedGang(posId);
+      if (ret && ret.status) {
+        if (ret.result) {
+          this.finishMahjongGame(deskId, ret.result);
+          return;
+        }
+        this.broadcastMahjongState(deskId, { meld: Object.assign({ posId, type: 'angang' }, ret.meld), drawCard: ret.drawCard, timeout: MAHJONG_PLAY_TIMEOUT });
+        this.scheduleMahjongBotAction(deskId);
+        return;
+      }
+    }
+    const hand = game.getCardsByPosId(posId) || [];
+    if (!hand.length) return;
+    const pick = hand[Math.floor(Math.random() * hand.length)];
+    ret = game.discard(posId, pick);
+    if (!ret || !ret.status) return;
+    this.broadCastRoom('MAHJONG_DISCARD', deskId, { posId, card: ret.card });
+    if (game.getStatus() === 3) {
+      this.finishMahjongGame(deskId, game.getResult());
+      return;
+    }
+    this.broadcastMahjongState(deskId, { drawCard: ret.drawCard, timeout: MAHJONG_PLAY_TIMEOUT });
+    this.scheduleMahjongBotAction(deskId);
   },
   botCallScore(deskId, posId) {
     const game = this.gameDatas[deskId];
@@ -1153,6 +1325,8 @@ const proto = {
         if (game) {
           const status = game.getStatus();
           if (game && status && status !== 3) {
+            this.clearBotTimer(deskId);
+            this.clearMahjongClaimTimer(deskId);
             //更新其它两位玩家的座位状态为未准备
             this.updateOtherPosStatus(deskId, posId, 1);
             //获取其它两位玩家的座位信息
@@ -1211,6 +1385,53 @@ const proto = {
 
       });
 
+      // 麻将操作：出牌、吃碰杠胡、过。所有校验都在服务端完成。
+      socket.on('MAHJONG_ACTION', data => {
+        const client = this.getClient(socket);
+        if (!client || client.posId === 'spec') return;
+        const room = this.getDesk(client.deskId);
+        const game = this.gameDatas[client.deskId];
+        if (!room || room.gameType !== 'mahjong' || !game || game.getStatus() !== 2) return;
+        const posId = Number(client.posId);
+        const action = data && data.action;
+        let ret;
+        if (action === 'discard') {
+          ret = game.discard(posId, data.card);
+          if (ret && ret.status) {
+            this.broadCastRoom('MAHJONG_DISCARD', client.deskId, { posId, card: ret.card });
+          }
+        } else if (action === 'pass') {
+          ret = game.passClaim(posId);
+        } else if (action === 'gang' && !game.getPendingClaim()) {
+          ret = game.concealedGang(posId, data.card);
+        } else if (action === 'hu' && !game.getPendingClaim()) {
+          if (game.getContextPosId() !== posId || !game.getTurnOptions(posId).includes('hu')) {
+            ret = { status: false, msg: '当前不能胡牌' };
+          } else {
+            ret = game.finishWin(posId, null, '自摸');
+          }
+        } else if (['hu', 'peng', 'gang', 'chi'].includes(action)) {
+          ret = game.claim(posId, action);
+        } else {
+          ret = { status: false, msg: '未知的麻将操作' };
+        }
+
+        if (!ret || !ret.status) {
+          socket.emit('MAHJONG_ERROR', { msg: (ret && ret.msg) || '操作无效' });
+          return;
+        }
+        if (ret.result || game.getStatus() === 3) {
+          this.finishMahjongGame(client.deskId, ret.result || game.getResult());
+          return;
+        }
+        this.broadcastMahjongState(client.deskId, {
+          timeout: MAHJONG_PLAY_TIMEOUT,
+          drawCard: ret.drawCard,
+          meld: ret.meld ? Object.assign({ posId, type: action }, ret.meld) : null,
+        });
+        this.scheduleBotAction(client.deskId);
+      });
+
       socket.on('CALL_SCORE', data => {
         const { score } = data;
         const client = this.getClient(socket);
@@ -1266,6 +1487,7 @@ const proto = {
         const { deskId, posId } = client;
         const game = this.gameDatas[deskId];
         const room = this.getDesk(deskId);
+        if (room && room.gameType === 'mahjong') return;
         if (game && deskId) {
           const ret = game.validate(posId, data);
           const isPass = !data.length;
@@ -1447,6 +1669,9 @@ const proto = {
             ctxScore: game.getContextScore ? game.getContextScore() : [],
             lastCardInfo: game.lastCardInfo ? Object.assign({}, game.lastCardInfo) : null,
           };
+          if (desk.gameType === 'mahjong' && game.getPublicState) {
+            snapshot.mahjong = game.getPublicState();
+          }
           if (desk.gameType === 'doudizhu' && status >= 2) {
             snapshot.dizhuPosId = game.getDiZhuPosId ? game.getDiZhuPosId() : '';
             const top = (game.getTopCards && game.getTopCards()) || [];
