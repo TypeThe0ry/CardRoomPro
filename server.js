@@ -92,19 +92,32 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-function jwtVerifyOptions() {
+function jwtVerifyOptions(token) {
   const options = { algorithms: ['HS256'] };
   const issuer = String(process.env.JWT_ISSUER || '').trim();
   const audience = String(process.env.JWT_AUDIENCE || '').trim();
   if (issuer) options.issuer = issuer;
   if (audience) options.audience = audience;
+  // 兼容 issuer/audience 加固前已经签发、但签名仍由同一 JWT_SECRET
+  // 生成的旧 token。新 token 只要带有 iss/aud，仍然严格校验这两项。
+  // 这样不会把旧登录态误判成“签名不匹配”，用户也不必被强制清空全部会话。
+  if (token && (issuer || audience)) {
+    const claims = require('jsonwebtoken').decode(token);
+    if (!claims || typeof claims !== 'object') {
+      delete options.issuer;
+      delete options.audience;
+    } else {
+      if (issuer && !Object.prototype.hasOwnProperty.call(claims, 'iss')) delete options.issuer;
+      if (audience && !Object.prototype.hasOwnProperty.call(claims, 'aud')) delete options.audience;
+    }
+  }
   return options;
 }
 
 function verifySsoToken(token) {
   if (!token) throw new Error('missing token');
   const jwt = require('jsonwebtoken');
-  return jwt.verify(token, proto.JWT_SECRET, jwtVerifyOptions());
+  return jwt.verify(token, proto.JWT_SECRET, jwtVerifyOptions(token));
 }
 
 // 2) /api/* 简单速率限制（按 IP，每 10 秒 30 次），抵御暴力探测/扫表。
@@ -1253,7 +1266,7 @@ const proto = {
         return next();
       }
       try {
-        const payload = jwt.verify(token, this.JWT_SECRET, jwtVerifyOptions());
+        const payload = jwt.verify(token, this.JWT_SECRET, jwtVerifyOptions(token));
         if (!payload || !payload.uid) {
           socket.tokenError = 'token 缺少 uid';
         } else {
