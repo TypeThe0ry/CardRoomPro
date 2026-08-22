@@ -58,6 +58,8 @@ const GuandanGame = require('./guandan-game.js');
 const MahjongGame = require('./mahjong-game.js');
 const AISuggest = require('./static/js/ai-suggest.js').AISuggest;
 const GuandanSuggest = require('./static/js/guandan-suggest.js').GuandanSuggest;
+const SmartAI = require('./static/js/smart-ai.js').SmartAI;
+const MahjongAI = require('./static/js/mahjong-ai.js').MahjongAI;
 const db = require('./db.js');
 
 // 底分（每分对应多少积分）。可通过环境变量调整。
@@ -852,15 +854,19 @@ const proto = {
     const game = this.gameDatas[deskId];
     if (!room || !game || game.getStatus() !== 2 || !this.isBotPos(deskId, posId)) return;
     const pending = game.getPendingClaim && game.getPendingClaim();
+    const publicState = game.getPublicState();
+    const aiOptions = {
+      openMelds: (publicState.melds[posId] || []).length,
+      discards: publicState.discards,
+      melds: publicState.melds,
+      selfPos: Number(posId),
+      wallCount: publicState.wallCount,
+    };
     let ret;
     if (pending) {
       const options = game.getTurnOptions(posId);
-      // AI 偶尔放弃可碰的牌，优先保留牌效；胡牌和杠牌则直接执行。
-      let action = 'pass';
-      if (options.includes('hu')) action = 'hu';
-      else if (options.includes('gang') && Math.random() > 0.15) action = 'gang';
-      else if (options.includes('peng') && Math.random() > 0.28) action = 'peng';
-      else if (options.includes('chi') && Math.random() > 0.5) action = 'chi';
+      const decision = MahjongAI.chooseClaim(game.getCardsByPosId(posId) || [], options, pending.card, aiOptions);
+      const action = options.includes(decision.action) ? decision.action : 'pass';
       ret = action === 'pass' ? game.passClaim(posId) : game.claim(posId, action);
       if (ret && ret.result) {
         this.finishMahjongGame(deskId, ret.result);
@@ -883,13 +889,15 @@ const proto = {
 
     if (game.getContextPosId() !== Number(posId) || game.getCurrentAction() !== 'discard') return;
     const options = game.getTurnOptions(posId);
-    if (options.includes('hu') && Math.random() > 0.08) {
+    if (options.includes('hu')) {
       ret = game.finishWin(posId, null, '自摸');
       this.finishMahjongGame(deskId, ret.result);
       return;
     }
-    if (options.includes('gang') && Math.random() < 0.12) {
-      ret = game.concealedGang(posId);
+    const hand = game.getCardsByPosId(posId) || [];
+    const gangDecision = options.includes('gang') ? MahjongAI.shouldConcealedGang(hand, aiOptions) : { action: 'pass' };
+    if (gangDecision.action === 'gang') {
+      ret = game.concealedGang(posId, gangDecision.card);
       if (ret && ret.status) {
         if (ret.result) {
           this.finishMahjongGame(deskId, ret.result);
@@ -900,9 +908,9 @@ const proto = {
         return;
       }
     }
-    const hand = game.getCardsByPosId(posId) || [];
     if (!hand.length) return;
-    const pick = hand[Math.floor(Math.random() * hand.length)];
+    const advice = MahjongAI.suggestDiscard(hand, aiOptions);
+    const pick = hand.find(card => Number(card.value) === Number(advice.card && advice.card.value)) || hand[hand.length - 1];
     ret = game.discard(posId, pick);
     if (!ret || !ret.status) return;
     this.broadCastRoom('MAHJONG_DISCARD', deskId, { posId, card: ret.card });
@@ -918,10 +926,8 @@ const proto = {
     if (!game) return;
     const ctxScore = game.getContextScore() || [];
     const hand = game.getCardsByPosId(posId) || [];
-    let score = shouldCallDoudizhuScore(hand, ctxScore);
-    if (!score && Math.random() < 0.12 && ctxScore.length) {
-      score = ctxScore[0];
-    }
+    const bid = SmartAI.doudizhu.recommendBid(hand, ctxScore);
+    const score = bid.score;
     const status = game.next(posId, score).getStatus();
     if (status == 1) {
       this.broadCastRoom('CTX_USER_CHANGE', deskId, {
@@ -956,12 +962,27 @@ const proto = {
     const lastInfo = (last.posId === posId || !last.len) ? { len: 0, ctxPos: 'self' } : {
       len: last.len, key: last.key, type: last.type, ctxPos: 'other'
     };
+    const landlordId = Number(game.getDiZhuPosId());
+    const lastPosId = Number(last.posId);
+    const selfIsLandlord = Number(posId) === landlordId;
+    const lastIsPartner = !selfIsLandlord && last.len > 0 && lastPosId !== landlordId && lastPosId !== Number(posId);
+    const opponentIds = selfIsLandlord ? [0, 1, 2].filter(id => id !== Number(posId)) : [landlordId];
+    const opponentMinCardCount = opponentIds.reduce((min, id) => Math.min(min, (game.getCardsByPosId(id) || []).length || 99), 99);
+    const partnerId = selfIsLandlord ? -1 : [0, 1, 2].find(id => id !== Number(posId) && id !== landlordId);
+    const aiOptions = {
+      role: selfIsLandlord ? 'landlord' : 'farmer',
+      lastIsPartner,
+      opponentMinCardCount,
+      partnerCardCount: partnerId == null || partnerId < 0 ? 99 : (game.getCardsByPosId(partnerId) || []).length,
+      cardCounts: [0, 1, 2].map(id => (game.getCardsByPosId(id) || []).length),
+      seenCards: game.getPlayedCards ? game.getPlayedCards() : [],
+    };
     let picks = [];
     const allOut = game.validate(posId, handRaw);
     if (allOut && allOut.status) {
       picks = handRaw.map(c => ({ value: c.value, type: c.type }));
     } else {
-      try { picks = (AISuggest.suggest(hand, lastInfo)) || []; } catch (e) { picks = []; }
+      try { picks = SmartAI.doudizhu.suggest(hand, lastInfo, aiOptions) || []; } catch (e) { picks = AISuggest.suggest(hand, lastInfo) || []; }
     }
     // 解析为真实牌实例（按下标占用避免重复）
     const used = new Set();
@@ -1020,7 +1041,7 @@ const proto = {
     }, 99);
     let data = [];
     try {
-      data = GuandanSuggest.suggest(handRaw, lead ? { len: 0, ctxPos: 'self' } : {
+      data = SmartAI.guandan.suggest(handRaw, lead ? { len: 0, ctxPos: 'self' } : {
         len: last.len,
         key: last.key,
         type: last.type,
@@ -1032,6 +1053,7 @@ const proto = {
         lastIsPartner: !lead && Number(last.posId) % 2 === Number(posId) % 2,
         teammateCardCount: (game.getCardsByPosId(teammateId) || []).length,
         opponentMinCardCount,
+        seenCards: game.getPlayedCards ? game.getPlayedCards() : [],
       }) || [];
     } catch (e) {
       data = [];

@@ -247,12 +247,27 @@
 
         <div class="mahjong-actions" v-if="!isSpec && roomState.state > 0 && roomState.state < 3 && (roomState.ctxPos === 'self' || mahjong.claimActions.length)">
           <span class="clock">{{roomState.timeout}}</span>
+          <button type="button" class="btn btn-ghost btn-ai" @click="mahjongSuggest" title="分析向听、进张与牌河风险">智囊</button>
           <button v-if="mahjong.claimActions.indexOf('hu') > -1" type="button" class="btn btn-vermilion" @click="mahjongAction('hu')">胡</button>
           <button v-if="mahjong.claimActions.indexOf('gang') > -1" type="button" class="btn btn-jade" @click="mahjongAction('gang')">杠</button>
           <button v-if="mahjong.claimActions.indexOf('peng') > -1" type="button" class="btn btn-call" @click="mahjongAction('peng')">碰</button>
           <button v-if="mahjong.claimActions.indexOf('chi') > -1" type="button" class="btn btn-call" @click="mahjongAction('chi')">吃</button>
           <button v-if="mahjong.claimActions.indexOf('pass') > -1" type="button" class="btn btn-ghost" @click="mahjongAction('pass')">过</button>
           <button v-if="roomState.ctxPos === 'self' && mahjong.selectedTile && mahjong.action === 'discard'" type="button" class="btn btn-vermilion" @click="mahjongDiscard">出牌</button>
+        </div>
+
+        <div v-if="mahjong.advice" class="mahjong-advice">
+          <button type="button" class="mahjong-advice-close" @click="mahjong.advice = null" aria-label="关闭智囊">×</button>
+          <div class="mahjong-advice-head"><i>谋</i><span>麻将智囊</span><strong>{{mahjong.advice.title}}</strong></div>
+          <p>{{mahjong.advice.reason}}</p>
+          <div v-if="mahjong.advice.effectiveTiles && mahjong.advice.effectiveTiles.length" class="mahjong-advice-waits">
+            <span>有效牌</span>
+            <em v-for="value in mahjong.advice.effectiveTiles" :key="'advice-' + value" class="mahjong-advice-tile"><mahjong-tile-face :tile="{value:value,type:0}"></mahjong-tile-face></em>
+            <b>约 {{mahjong.advice.ukeire}} 张</b>
+          </div>
+          <div v-if="mahjong.advice.alternatives && mahjong.advice.alternatives.length > 1" class="mahjong-advice-alt">
+            备选：<span v-for="(item, index) in mahjong.advice.alternatives.slice(1)" :key="'alt-' + index">{{item.label}} · {{item.shanten === 0 ? '听牌' : item.shanten + '向听'}} · {{item.ukeire}}张</span>
+          </div>
         </div>
       </div>
 
@@ -500,6 +515,8 @@
   <script src="/js/parser.js"></script>
   <script src="/js/ai-suggest.js?v=20260626-1"></script>
   <script src="/js/guandan-suggest.js?v=20260626-2"></script>
+  <script src="/js/smart-ai.js?v=20260822-1"></script>
+  <script src="/js/mahjong-ai.js?v=20260822-1"></script>
   <script src="/js/effects.js?v=20260626-2"></script>
   <script>
 
@@ -603,6 +620,7 @@
           scoreBoard: {},//本桌累计积分 { name: number }
           scoreSeen: [],//本桌出现过的玩家名顺序，保证显示稳定
           lastRoundDelta: null,//上一局的得分明细 [{name,delta}]
+          aiSeenCards: [],//本局公开打出的牌，供智囊做记牌与控制力判断
           guandanScore: {
             team0: 0,
             team1: 0
@@ -641,6 +659,7 @@
             claimActions: [],
             lastDiscard: null,
             selectedTile: null,
+            advice: null,
           },
           guandanLevelLabel: '2',
           guandanLevelRank: 15,
@@ -924,6 +943,8 @@
           //游戏开始
           this.client.on('GAME_START', function (data) {
             this.gameType = data.gameType || this.gameType || 'doudizhu';
+            this.aiSeenCards = [];
+            this.mahjong.advice = null;
             this.roomState.state = (this.gameType === 'guandan' || this.gameType === 'mahjong') ? 2 : 1;
             if (this.gameType === 'guandan') {
               this.guandanLevelLabel = data.levelLabel || this.guandanLevelLabel || '2';
@@ -1022,6 +1043,11 @@
               this.roomState.ctxCard.key = data.ctxData.key;
               this.roomState.ctxCard.type = data.ctxData.type;
               this.roomState.ctxCard.ctxPos = direct;
+              if (data.ctxData.cards && data.ctxData.cards.length) {
+                this.aiSeenCards = this.aiSeenCards.concat(data.ctxData.cards.map(function (card) {
+                  return { value: Number(card.value), type: Number(card.type) || 0, deck: card.deck };
+                }));
+              }
             }
             this.removeCards(direct, data.ctxData.cards);
             this.roomState.ctxPos = this.getDirectionByPosId(data.posId);
@@ -1073,6 +1099,7 @@
           }.bind(this));
 
           this.client.on('GAME_OVER', function (data) {
+            this.mahjong.advice = null;
             if ((data && data.gameType) === 'mahjong' || this.gameType === 'mahjong') {
               this.startTimer(false);
               this.roomState.state = 3;
@@ -1881,25 +1908,26 @@
         },
         autoPlayCards: function () {
           if (this.roomState.ctxPos === 'self') {
+            var lastInfo = {
+              len: this.roomState.ctxCard.len,
+              key: this.roomState.ctxCard.key,
+              type: this.roomState.ctxCard.type,
+              ctxPos: this.roomState.ctxCard.ctxPos
+            };
             if (this.gameType === 'guandan') {
               var gdCards = [];
-              if (window.GuandanSuggest) {
-                gdCards = GuandanSuggest.suggest(this.posState.self.cards, {
-                  len: this.roomState.ctxCard.len,
-                  key: this.roomState.ctxCard.key,
-                  type: this.roomState.ctxCard.type,
-                  ctxPos: this.roomState.ctxCard.ctxPos
-                }, {
-                  levelRank: this.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel),
-                  levelLabel: this.guandanLevelLabel,
-                  lastIsPartner: this.roomState.ctxCard.ctxPos === 'top'
-                });
+              if (window.SmartAI) {
+                gdCards = SmartAI.guandan.suggest(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
+              } else if (window.GuandanSuggest) {
+                gdCards = GuandanSuggest.suggest(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
               }
               if (!gdCards.length && !this.roomState.ctxCard.len) gdCards = [this.posState.self.cards[0]];
               this.client.emit('PLAY_CARD', gdCards);
               return;
             }
-            var cards = this.roomState.ctxCard.ctxPos === 'self' ? [this.posState.self.cards[0]] : [];
+            var cards = [];
+            if (window.SmartAI) cards = SmartAI.doudizhu.suggest(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
+            else if (!lastInfo.len || lastInfo.ctxPos === 'self') cards = [this.posState.self.cards[0]];
             this.client.emit('PLAY_CARD', cards);
           }
         },
@@ -2026,6 +2054,7 @@
           this.mahjong.discards = makeGroups(data.discards);
           this.mahjong.melds = makeGroups(data.melds);
           this.mahjong.selectedTile = null;
+          this.mahjong.advice = null;
         },
         handleMahjongState: function (data) {
           if (!data) return;
@@ -2063,17 +2092,20 @@
           this.posState.self.cards.forEach(function (card) { card.selected = false; });
           tile.selected = true;
           this.mahjong.selectedTile = tile;
+          this.mahjong.advice = null;
           if (window.FX) FX.beep('mahjong-select');
         },
         mahjongAction: function (action) {
           if (this.isSpec || !action) return;
           this.client.emit('MAHJONG_ACTION', { action: action });
           this.mahjong.claimActions = [];
+          this.mahjong.advice = null;
         },
         mahjongDiscard: function () {
           if (this.isSpec || !this.mahjong.selectedTile) return;
           this.client.emit('MAHJONG_ACTION', { action: 'discard', card: this.mahjong.selectedTile });
           this.mahjong.selectedTile = null;
+          this.mahjong.advice = null;
           this.posState.self.cards.forEach(function (card) { card.selected = false; });
         },
         applySpectateSnapshot: function (snap) {
@@ -2171,6 +2203,80 @@
             setTimeout(function () { window.FX && FX.setMuted(self.muted); }, 50);
           }
         },
+        buildCardAiOptions: function () {
+          var options = { seenCards: this.aiSeenCards.slice(0) };
+          if (this.gameType === 'guandan') {
+            options.levelRank = this.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
+            options.levelLabel = this.guandanLevelLabel;
+            options.lastIsPartner = this.roomState.ctxCard.ctxPos === 'top';
+            options.teammateCardCount = this.posState.top.cards.length;
+            options.opponentMinCardCount = Math.min(this.posState.left.cards.length || 99, this.posState.right.cards.length || 99);
+            return options;
+          }
+
+          var selfIsLandlord = !!this.posState.self.isDizhu;
+          var otherDirections = ['left', 'right'];
+          var opponents = otherDirections.filter(function (direct) {
+            return !!this.posState[direct].isDizhu !== selfIsLandlord;
+          }.bind(this));
+          var partners = otherDirections.filter(function (direct) {
+            return !!this.posState[direct].isDizhu === selfIsLandlord;
+          }.bind(this));
+          options.role = selfIsLandlord ? 'landlord' : 'farmer';
+          options.lastIsPartner = !selfIsLandlord && partners.indexOf(this.roomState.ctxCard.ctxPos) > -1;
+          options.partnerCardCount = partners.length ? this.posState[partners[0]].cards.length : 99;
+          options.opponentMinCardCount = opponents.length ? Math.min.apply(Math, opponents.map(function (direct) {
+            return this.posState[direct].cards.length;
+          }.bind(this))) : 99;
+          return options;
+        },
+        mahjongAiOptions: function () {
+          return {
+            openMelds: (this.mahjong.melds.self || []).length,
+            discards: this.mahjong.discards,
+            melds: this.mahjong.melds,
+            wallCount: this.mahjong.wallCount,
+            selfPos: 'self'
+          };
+        },
+        mahjongSuggest: function () {
+          if (this.isSpec || this.gameType !== 'mahjong' || !window.MahjongAI) return;
+          var actionLabels = { hu: '胡', gang: '杠', peng: '碰', chi: '吃', pass: '过' };
+          var advice;
+          if (this.mahjong.action === 'claim' && this.mahjong.claimActions.length && this.mahjong.lastDiscard) {
+            advice = MahjongAI.chooseClaim(this.posState.self.cards, this.mahjong.claimActions, this.mahjong.lastDiscard.card, this.mahjongAiOptions());
+            this.mahjong.advice = {
+              title: '建议「' + (actionLabels[advice.action] || advice.action) + '」',
+              reason: advice.reason,
+              effectiveTiles: [],
+              ukeire: advice.ukeire || 0,
+              alternatives: []
+            };
+            window.FX && FX.beep('mahjong-select');
+            return;
+          }
+          if (this.roomState.ctxPos !== 'self' || this.mahjong.action !== 'discard') {
+            return layer.msg('当前无需你出牌');
+          }
+          advice = MahjongAI.suggestDiscard(this.posState.self.cards, this.mahjongAiOptions());
+          if (!advice.card) return layer.msg('暂时无法分析这副手牌');
+          var selected = this.posState.self.cards.find(function (tile) {
+            return Number(tile.value) === Number(advice.card.value);
+          });
+          this.posState.self.cards.forEach(function (tile) { tile.selected = false; });
+          if (selected) {
+            selected.selected = true;
+            this.mahjong.selectedTile = selected;
+          }
+          this.mahjong.advice = {
+            title: '建议打「' + (MahjongAI.TILE_LABELS[advice.card.value] || '此牌') + '」',
+            reason: advice.reason + (advice.danger >= 4 ? '；当前牌河风险偏高，已兼顾防守' : ''),
+            effectiveTiles: advice.effectiveTiles,
+            ukeire: advice.ukeire,
+            alternatives: advice.alternatives
+          };
+          window.FX && FX.beep('mahjong-select');
+        },
         // AI 智囊：自动选牌
         aiSuggest: function () {
           if (this.isSpec) return;
@@ -2183,40 +2289,37 @@
             type: this.roomState.ctxCard.type,
             ctxPos: this.roomState.ctxCard.ctxPos
           };
-          var picks = [];
+          var detail = null;
           if (this.gameType === 'guandan') {
-            if (!window.GuandanSuggest) return;
-            picks = GuandanSuggest.suggest(this.posState.self.cards, lastInfo, {
-              levelRank: this.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel),
-              levelLabel: this.guandanLevelLabel,
-              lastIsPartner: this.roomState.ctxCard.ctxPos === 'top'
-            });
+            if (window.SmartAI) detail = SmartAI.guandan.suggestDetailed(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
+            else if (window.GuandanSuggest) detail = { cards: GuandanSuggest.suggest(this.posState.self.cards, lastInfo, this.buildCardAiOptions()), reason: '按当前牌型推荐' };
           } else {
-            if (!window.AISuggest) return;
-            picks = AISuggest.suggest(this.posState.self.cards, lastInfo);
+            if (window.SmartAI) detail = SmartAI.doudizhu.suggestDetailed(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
+            else if (window.AISuggest) detail = { cards: AISuggest.suggest(this.posState.self.cards, lastInfo), reason: '按当前牌型推荐' };
           }
+          if (!detail) return layer.msg('智囊引擎尚未就绪');
+          var picks = detail.cards || [];
           // 先全部反选
           this.posState.self.cards.forEach(function (c) { c.selected = false; });
           if (!picks || !picks.length) {
             window.FX && FX.beep('tick');
-            return layer.msg('无可压制的牌，建议「不出」');
+            return layer.msg(detail.reason || '无可压制的牌，建议「不出」');
           }
-          // 把建议的牌打勾（按 value+type 匹配，且每张只标记一次）
-          var used = {};
+          // 按实体牌逐张匹配；同点数同花色的双副牌也必须完整选中。
+          var usedIndexes = {};
           picks.forEach(function (pk) {
-            var k = pk.value + '_' + pk.type + '_' + (pk.deck == null ? '*' : pk.deck);
-            if (used[k]) return;
             for (var i = 0; i < this.posState.self.cards.length; i++) {
               var c = this.posState.self.cards[i];
               var deckOk = pk.deck == null || c.deck == null || Number(c.deck || 0) === Number(pk.deck || 0);
-              if (!c.selected && c.value === pk.value && c.type === pk.type && deckOk) {
+              if (!usedIndexes[i] && c.value === pk.value && c.type === pk.type && deckOk) {
                 c.selected = true;
-                used[k] = true;
+                usedIndexes[i] = true;
                 break;
               }
             }
           }.bind(this));
           window.FX && FX.beep('chip');
+          layer.msg(detail.reason || ('已推荐 ' + picks.length + ' 张牌'));
         }
       },
       computed: {

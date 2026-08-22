@@ -202,6 +202,7 @@ Object.assign(GuandanGame.prototype, {
     this.passCount = 0;
     this.finishOrder = [];
     this.finished = {};
+    this.playedCards = [];
     return this;
   },
   start() {
@@ -242,6 +243,9 @@ Object.assign(GuandanGame.prototype, {
     const group = this.contextCards.find(item => item.id === Number(posId));
     return group ? group.cards : null;
   },
+  getPlayedCards() {
+    return this.playedCards.slice(0);
+  },
   getLevelLabel() {
     return labelValue(this.levelRank);
   },
@@ -277,6 +281,9 @@ Object.assign(GuandanGame.prototype, {
     if (!this.checkExist(cards, posId)) return { status: false };
     const ret = analyze(cards, this.levelRank);
     if (!ret.status) return ret;
+    // 其他仍在场玩家均已过牌或已走完时，牌权会回到上一手持有者；
+    // 此时应视为新一墩自由领出，不能要求玩家继续压过自己的旧牌。
+    if (Number(this.lastCardInfo.posId) === Number(posId)) return ret;
     if (!canBeat(ret, this.lastCardInfo)) return { status: false };
     return ret;
   },
@@ -320,6 +327,7 @@ Object.assign(GuandanGame.prototype, {
       return this;
     }
     this.removeCards(cards, posId);
+    this.playedCards = this.playedCards.concat(cards.map(card => ({ value: card.value, type: card.type, deck: card.deck })));
     this.lastCardInfo = {
       posId,
       len: ret.len,

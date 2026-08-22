@@ -37,6 +37,7 @@ function Game() {
     type: ''
   };
   this.contextPosId = '';
+  this.playedCards = [];
   this.userScore = {
     0: -1,
     1: -1,
@@ -203,6 +204,9 @@ Object.assign(
     getCards() {
       return this.contextCards;
     },
+    getPlayedCards() {
+      return this.playedCards.slice(0);
+    },
     init() {
       this.contextCards = [];
       this.contextScore = [1, 2, 3];
@@ -215,6 +219,7 @@ Object.assign(
         type: ''
       };
       this.contextPosId = '';
+      this.playedCards = [];
       this.userScore = {
         0: -1,
         1: -1,
@@ -388,6 +393,9 @@ Object.assign(
               this.ratio++;
             }
             this.sumCount[posId]++;
+            this.playedCards = this.playedCards.concat(data.map(function (card) {
+              return { value: card.value, type: card.type };
+            }));
           }
 
 
