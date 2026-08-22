@@ -2241,45 +2241,26 @@
         },
         mahjongSuggest: function () {
           if (this.isSpec || this.gameType !== 'mahjong' || !window.MahjongAI) return;
-          var actionLabels = { hu: '胡', gang: '杠', peng: '碰', chi: '吃', pass: '过' };
           var advice;
           if (this.mahjong.action === 'claim' && this.mahjong.claimActions.length && this.mahjong.lastDiscard) {
-            advice = MahjongAI.chooseClaim(this.posState.self.cards, this.mahjong.claimActions, this.mahjong.lastDiscard.card, this.mahjongAiOptions());
-            this.mahjong.advice = {
-              title: '建议「' + (actionLabels[advice.action] || advice.action) + '」',
-              reason: advice.reason,
-              effectiveTiles: [],
-              ukeire: advice.ukeire || 0,
-              alternatives: []
-            };
-            window.FX && FX.beep('mahjong-select');
+            // 吃碰杠胡属于操作按钮，不由智囊代点，避免把 AI 决策和玩家操作混在一起。
+            this.mahjong.advice = null;
             return;
           }
           if (this.roomState.ctxPos !== 'self' || this.mahjong.action !== 'discard') {
-            return layer.msg('当前无需你出牌');
+            return;
           }
           advice = MahjongAI.suggestDiscard(this.posState.self.cards, this.mahjongAiOptions());
-          if (!advice.card) return layer.msg('暂时无法分析这副手牌');
-          this.mahjong.advice = {
-            title: '建议打「' + (MahjongAI.TILE_LABELS[advice.card.value] || '此牌') + '」',
-            reason: advice.reason + (advice.danger >= 4 ? '；当前牌河风险偏高，已兼顾防守' : ''),
-            effectiveTiles: advice.effectiveTiles,
-            ukeire: advice.ukeire,
-            alternatives: advice.alternatives
-          };
+          if (!advice.card) return;
+          var selected = this.posState.self.cards.find(function (tile) {
+            return Number(tile.value) === Number(advice.card.value);
+          });
+          if (!selected) return;
+          this.posState.self.cards.forEach(function (tile) { tile.selected = false; });
+          selected.selected = true;
+          this.mahjong.selectedTile = selected;
+          this.mahjong.advice = null;
           window.FX && FX.beep('mahjong-select');
-        },
-        cardValueLabel: function (value) {
-          var labels = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2', 16: '小王', 17: '大王' };
-          return labels[Number(value)] || String(value);
-        },
-        cardAdviceTypeLabel: function (type) {
-          var labels = {
-            A: '单张', AA: '对子', AAA: '三张', AAAA: '炸弹', KING: '王炸',
-            ABCDE: '顺子', AABBCC: '连对', AAABBB: '飞机', AAAB: '三带一',
-            AAABB: '三带二', AAAABC: '四带二', AAAABBCC: '四带二对'
-          };
-          return labels[type] || type || '牌型';
         },
         isCardAdvicePlayable: function (cards, lastInfo) {
           if (!cards || !cards.length) return true;
@@ -2313,11 +2294,11 @@
           }
           return true;
         },
-        // 智囊只给提示，不改动选牌；真正出牌仍由玩家手动选择并点击“出牌”。
+        // 智囊只负责自动勾选合法推荐牌；真正出牌仍由玩家手动点击“出牌”。
         aiSuggest: function () {
           if (this.isSpec) return;
           if (this.roomState.state !== 2 || this.roomState.ctxPos !== 'self') {
-            return layer.msg('暂未到出牌时机');
+            return;
           }
           var lastInfo = {
             len: this.roomState.ctxCard.len,
@@ -2333,25 +2314,37 @@
             if (window.SmartAI) detail = SmartAI.doudizhu.suggestDetailed(this.posState.self.cards, lastInfo, this.buildCardAiOptions());
             else if (window.AISuggest) detail = { cards: AISuggest.suggest(this.posState.self.cards, lastInfo), reason: '按当前牌型推荐' };
           }
-          if (!detail) return layer.msg('智囊引擎尚未就绪');
+          if (!detail) return;
           var picks = detail.cards || [];
           if (!picks || !picks.length) {
             window.FX && FX.beep('tick');
-            return layer.msg(detail.reason || '无可压制的牌，建议「不出」');
+            return;
           }
-          // 只解析并校验建议，不把建议牌写入 selected，避免把非法/过期牌型送进出牌流程。
+          // 只解析并校验建议，确认合法后才自动勾选实体牌；不自动提交出牌。
           var normalizedPicks = picks.map(function (pk) {
             return { value: Number(pk.value), type: Number(pk.type) || 0, deck: pk.deck };
           });
           if (!this.isCardAdvicePlayable(normalizedPicks, lastInfo)) {
-            return layer.msg('智囊暂未找到当前牌权下的合法出牌，请手动选牌');
+            return;
           }
-          var labels = normalizedPicks.map(function (pk) { return this.cardValueLabel(pk.value); }.bind(this));
-          var typeLabel = this.cardAdviceTypeLabel(detail.metrics && detail.metrics.type);
-          var hint = '建议出牌：' + labels.join(' ') + '（' + typeLabel + '）';
-          if (detail.reason) hint += '；' + detail.reason;
+          var resolved = [];
+          var usedIndexes = {};
+          normalizedPicks.forEach(function (pk) {
+            for (var i = 0; i < this.posState.self.cards.length; i++) {
+              var c = this.posState.self.cards[i];
+              var deckOk = pk.deck == null || c.deck == null || Number(c.deck || 0) === Number(pk.deck || 0);
+              if (!usedIndexes[i] && Number(c.value) === pk.value && Number(c.type) === pk.type && deckOk) {
+                resolved.push(c);
+                usedIndexes[i] = true;
+                break;
+              }
+            }
+          }.bind(this));
+          if (resolved.length !== normalizedPicks.length) return;
+          this.posState.self.cards.forEach(function (c) { c.selected = false; });
+          resolved.forEach(function (c) { c.selected = true; });
           window.FX && FX.beep('chip');
-          return layer.msg(hint, { time: 3200 });
+          return;
         }
       },
       computed: {
