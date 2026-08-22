@@ -2260,14 +2260,6 @@
           }
           advice = MahjongAI.suggestDiscard(this.posState.self.cards, this.mahjongAiOptions());
           if (!advice.card) return layer.msg('暂时无法分析这副手牌');
-          var selected = this.posState.self.cards.find(function (tile) {
-            return Number(tile.value) === Number(advice.card.value);
-          });
-          this.posState.self.cards.forEach(function (tile) { tile.selected = false; });
-          if (selected) {
-            selected.selected = true;
-            this.mahjong.selectedTile = selected;
-          }
           this.mahjong.advice = {
             title: '建议打「' + (MahjongAI.TILE_LABELS[advice.card.value] || '此牌') + '」',
             reason: advice.reason + (advice.danger >= 4 ? '；当前牌河风险偏高，已兼顾防守' : ''),
@@ -2277,7 +2269,51 @@
           };
           window.FX && FX.beep('mahjong-select');
         },
-        // AI 智囊：自动选牌
+        cardValueLabel: function (value) {
+          var labels = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2', 16: '小王', 17: '大王' };
+          return labels[Number(value)] || String(value);
+        },
+        cardAdviceTypeLabel: function (type) {
+          var labels = {
+            A: '单张', AA: '对子', AAA: '三张', AAAA: '炸弹', KING: '王炸',
+            ABCDE: '顺子', AABBCC: '连对', AAABBB: '飞机', AAAB: '三带一',
+            AAABB: '三带二', AAAABC: '四带二', AAAABBCC: '四带二对'
+          };
+          return labels[type] || type || '牌型';
+        },
+        isCardAdvicePlayable: function (cards, lastInfo) {
+          if (!cards || !cards.length) return true;
+          if (this.gameType === 'doudizhu') {
+            var ret = validate(cards);
+            if (!ret.status) return false;
+            if (!lastInfo || !Number(lastInfo.len) || lastInfo.ctxPos === 'self') return true;
+            if (lastInfo.type === 'KING') return false;
+            for (var i = 0; i < ret.types.length; i++) {
+              var item = ret.types[i];
+              if (item.type === 'KING') return true;
+              if (lastInfo.type === 'AAAA' && item.type === 'AAAA' && Number(item.key) > Number(lastInfo.key)) return true;
+              if (lastInfo.type !== 'AAAA' && item.type === 'AAAA') return true;
+              if (item.type === lastInfo.type && ret.len === Number(lastInfo.len) && Number(item.key) > Number(lastInfo.key)) return true;
+            }
+            return false;
+          }
+          if (this.gameType === 'guandan' && window.GuandanSuggest && window.GuandanSuggest.analyze) {
+            var options = this.buildCardAiOptions();
+            var analyzed = window.GuandanSuggest.analyze(cards, options.levelRank);
+            if (!analyzed || !analyzed.status) return false;
+            if (!lastInfo || !Number(lastInfo.len) || lastInfo.ctxPos === 'self') return true;
+            var last = {
+              len: Number(lastInfo.len),
+              key: Number(lastInfo.key) || 0,
+              type: lastInfo.type || '',
+              bomb: !!lastInfo.bomb || ['BOMB', 'STRAIGHT_FLUSH', 'JOKER_BOMB'].indexOf(lastInfo.type) > -1,
+              bombPower: Number(lastInfo.bombPower) || (lastInfo.type === 'JOKER_BOMB' ? 100 : (lastInfo.type === 'STRAIGHT_FLUSH' ? 5.5 : (lastInfo.type === 'BOMB' ? Number(lastInfo.len) : 0)))
+            };
+            return window.GuandanSuggest.canBeat(analyzed, last);
+          }
+          return true;
+        },
+        // 智囊只给提示，不改动选牌；真正出牌仍由玩家手动选择并点击“出牌”。
         aiSuggest: function () {
           if (this.isSpec) return;
           if (this.roomState.state !== 2 || this.roomState.ctxPos !== 'self') {
@@ -2299,27 +2335,23 @@
           }
           if (!detail) return layer.msg('智囊引擎尚未就绪');
           var picks = detail.cards || [];
-          // 先全部反选
-          this.posState.self.cards.forEach(function (c) { c.selected = false; });
           if (!picks || !picks.length) {
             window.FX && FX.beep('tick');
             return layer.msg(detail.reason || '无可压制的牌，建议「不出」');
           }
-          // 按实体牌逐张匹配；同点数同花色的双副牌也必须完整选中。
-          var usedIndexes = {};
-          picks.forEach(function (pk) {
-            for (var i = 0; i < this.posState.self.cards.length; i++) {
-              var c = this.posState.self.cards[i];
-              var deckOk = pk.deck == null || c.deck == null || Number(c.deck || 0) === Number(pk.deck || 0);
-              if (!usedIndexes[i] && c.value === pk.value && c.type === pk.type && deckOk) {
-                c.selected = true;
-                usedIndexes[i] = true;
-                break;
-              }
-            }
-          }.bind(this));
+          // 只解析并校验建议，不把建议牌写入 selected，避免把非法/过期牌型送进出牌流程。
+          var normalizedPicks = picks.map(function (pk) {
+            return { value: Number(pk.value), type: Number(pk.type) || 0, deck: pk.deck };
+          });
+          if (!this.isCardAdvicePlayable(normalizedPicks, lastInfo)) {
+            return layer.msg('智囊暂未找到当前牌权下的合法出牌，请手动选牌');
+          }
+          var labels = normalizedPicks.map(function (pk) { return this.cardValueLabel(pk.value); }.bind(this));
+          var typeLabel = this.cardAdviceTypeLabel(detail.metrics && detail.metrics.type);
+          var hint = '建议出牌：' + labels.join(' ') + '（' + typeLabel + '）';
+          if (detail.reason) hint += '；' + detail.reason;
           window.FX && FX.beep('chip');
-          layer.msg(detail.reason || ('已推荐 ' + picks.length + ' 张牌'));
+          return layer.msg(hint, { time: 3200 });
         }
       },
       computed: {
