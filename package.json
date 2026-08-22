@@ -2,14 +2,37 @@
 {
   "name": "quege-card-room",
   "version": "1.0.0",
-  "description": "雀阁纸牌房：支持斗地主、掼蛋和未来扩展玩法的在线房间制纸牌游戏平台",
+  "description": "Real-time multiplayer card room with Doudizhu, Guandan, Mahjong, AI seats, and leaderboards",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "test:ai": "node test/ai.test.js"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "TypeThe0ry",
+  "license": "MIT",
+  "homepage": "https://ddz.yutianfu.me/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TypeThe0ry/CardRoomPro.git"
+  },
+  "bugs": {
+    "url": "https://github.com/TypeThe0ry/CardRoomPro/issues"
+  },
+  "keywords": [
+    "card-game",
+    "online-card-room",
+    "multiplayer-game",
+    "doudizhu",
+    "guandan",
+    "mahjong",
+    "mahjong-ai",
+    "game-ai",
+    "nodejs",
+    "socket.io",
+    "vue2",
+    "mysql-leaderboard",
+    "discuz-sso"
+  ],
   "dependencies": {
     "express": "^4.16.4",
     "socket.io": "^4.8.1",

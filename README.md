@@ -1,279 +1,159 @@
-# 雀阁 · 纸牌房
+# CardRoomPro · Online Card Room
 
-雀阁是一个基于 Node.js、Socket.IO 和 Vue 2 的在线纸牌房项目。项目最初 fork 自 [laivv/doudizhu](https://github.com/laivv/doudizhu.git)，现在已重构为“房间制 + 多玩法”的纸牌游戏平台，当前支持斗地主和掼蛋，并预留继续接入新玩法的结构。
+[![Node.js](https://img.shields.io/badge/Node.js-18%2B-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Socket.IO](https://img.shields.io/badge/Socket.IO-realtime-010101?logo=socket.io&logoColor=white)](https://socket.io/)
+[![Vue 2](https://img.shields.io/badge/Vue-2.x-4FC08D?logo=vue.js&logoColor=white)](https://v2.vuejs.org/)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 功能概览
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-- 动态房间：支持公开房、私密房、房号加入、快速入局。
-- 斗地主：三人叫分、地主底牌、地主/农民阵营、炸弹与春天倍率、AI 对手、智囊推荐。
-- 掼蛋：四人两副牌、固定对家、级牌升级、红桃级牌逢人配、AI 补位、智囊推荐、局内队伍计分板。
-- 观战模式：可不入座观看正在进行的房间。
-- AI 系统：空位可补 AI，真人可顶替等待态 AI，AI 会自动重新准备。
-- 聊天系统：房间内自由文本聊天。
-- 音效与特效：出牌、不出、炸弹、王炸、同花顺等有局内反馈，可静音。
-- 积分系统：可选 MySQL 持久化，斗地主和掼蛋积分榜独立统计。
-- Discuz SSO：可选 JWT 单点登录，支持同步 Discuz 用户名和头像。
-- 登录分支：默认首页保留 Discuz 登录/访客入口；普通玩家可访问 `/?auth=guest` 直接输入用户名进入。
-- 移动端：大厅可响应式使用；牌桌在手机端要求横屏。
+CardRoomPro (雀阁 · 纸牌房) is a real-time multiplayer card-room platform built with **Node.js, Socket.IO, and Vue 2**. It supports room-based play, AI seats, spectators, chat, audio feedback, Mahjong, and persistent seasonal leaderboards.
 
-## 快速开始
+## Screenshots
 
-要求 Node.js 18 或更高版本。
+<p align="center">
+  <img src=".codex-ui-audit/11-room-playing-after.png" alt="CardRoomPro gameplay UI" width="920">
+</p>
+
+| Lobby | Guandan | Mobile |
+| --- | --- | --- |
+| <img src=".codex-ui-audit/07-hall-after.png" alt="Card room lobby" width="280"> | <img src=".codex-ui-audit/18-guandan-hall-after.png" alt="Guandan lobby" width="280"> | <img src=".codex-ui-audit/13-mobile-hall-after.png" alt="Mobile lobby" width="280"> |
+
+**Live demo:** [ddz.yutianfu.me](https://ddz.yutianfu.me/)
+
+## Features
+
+- **Three game modes:** Doudizhu (斗地主), Guandan (掼蛋), and four-player Mahjong (麻将).
+- **Room system:** public/private rooms, room codes, quick join, ready states, spectators, and AI fill seats.
+- **Real-time play:** Socket.IO synchronization, in-room chat, reconnect-friendly state updates, sounds, and visual effects.
+- **Rule-aware AI:** legal move generation, bidding and role decisions, hand/discard evaluation, Mahjong shanten and effective-tile analysis, and discard-risk scoring.
+- **Advisor mode (智囊):** highlights a legal recommendation for the local player without automatically submitting the move.
+- **Season leaderboard:** separate Doudizhu, Guandan, and Mahjong rankings with podium, top-20 table, personal stats, and current-player highlighting.
+- **Optional integrations:** MySQL score persistence and Discuz-compatible JWT single sign-on.
+- **Responsive UI:** lobby works on desktop and mobile; card tables are optimized for landscape play on small screens.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  Browser[Vue 2 browser client] <-->|Socket.IO| Server[Node.js game server]
+  Server --> Rules[Rule engines\nDoudizhu · Guandan · Mahjong]
+  Server --> AI[Smart AI + Mahjong AI]
+  Server --> DB[(MySQL optional)]
+  Server --> SSO[Discuz JWT SSO optional]
+```
+
+## Quick start
+
+Requirements: **Node.js 18+** and npm.
 
 ```bash
-npm install
+git clone https://github.com/TypeThe0ry/CardRoomPro.git
+cd CardRoomPro
+npm ci
 npm start
 ```
 
-默认监听 `8002`：
+Open [http://localhost:8002/](http://localhost:8002/).
 
-```text
-http://localhost:8002/
-```
-
-本地指定端口：
+To use another port:
 
 ```powershell
-$env:PORT='8012'
+$env:PORT = '8012'
 node server.js
 ```
 
-## 配置
+Run the AI regression suite:
 
-项目启动时按以下优先级读取配置：
+```bash
+npm run test:ai
+```
 
-1. 环境变量
-2. 根目录 `config.json`
-3. 代码默认值
+## Game modes
 
-复制示例配置：
+| Mode | Seats | Highlights |
+| --- | ---: | --- |
+| Doudizhu | 3 | Bidding, landlord cards, farmer/landlord roles, bombs, spring multiplier, AI opponents |
+| Guandan | 4 | Two decks, fixed partners, level progression, wild-heart level card, team scoreboard |
+| Mahjong | 4 | Tile wall, draw/discard flow, chi/peng/gang/hu actions, Mahjong AI, advisor recommendations |
+
+## Configuration
+
+The server reads settings in this order: **environment variables → `config.json` → defaults**. Start from the checked-in example:
 
 ```bash
 cp config.example.json config.json
 ```
 
-`config.json` 已加入 `.gitignore`，不要提交真实密钥和数据库密码。
-
-常用配置：
-
-| 字段 / 环境变量 | 说明 | 默认值 |
+| Variable | Purpose | Default |
 | --- | --- | --- |
-| `PORT` | HTTP / Socket.IO 监听端口 | `8002` |
-| `JWT_SECRET` | Discuz SSO JWT 密钥，必须与论坛端一致 | `change_this_in_production` |
-| `DB_HOST` | MySQL 地址 | `127.0.0.1` |
-| `DB_PORT` | MySQL 端口 | `3306` |
-| `DB_USER` | MySQL 用户名 | 无 |
-| `DB_PASSWORD` | MySQL 密码 | 空 |
-| `DB_NAME` | MySQL 数据库名 | 无 |
-| `DB_TABLE_PREFIX` | 表前缀，建议与 Discuz 一致 | `pre_` |
-| `DB_DISABLE` | 设为 `1` 禁用数据库持久化 | 未启用 |
-| `SCORE_BASE` | 每个基础分对应的积分 | `1` |
-| `DISCUZ_AVATAR_BASE` | Discuz 头像 URL 模板，支持 `{uid}` | `https://zwwx.club/uc_server/avatar.php?uid={uid}&size=middle` |
+| `PORT` | HTTP and Socket.IO port | `8002` |
+| `JWT_SECRET` | JWT secret shared with the SSO issuer | placeholder value |
+| `DB_HOST` / `DB_PORT` | MySQL host and port | `127.0.0.1:3306` |
+| `DB_USER` / `DB_PASSWORD` | MySQL credentials | unset / empty |
+| `DB_NAME` | MySQL database name | unset |
+| `DB_TABLE_PREFIX` | Score table prefix | `pre_` |
+| `DB_DISABLE` | Set to `1` for in-memory scores | unset |
+| `DISCUZ_AVATAR_BASE` | Avatar URL template; supports `{uid}` | Discuz default template |
 
-## 玩法说明
+Keep `config.json`, database credentials, JWT secrets, and SSO secrets out of Git.
 
-### 斗地主
+## AI and advisor behavior
 
-- 三人参与。
-- 叫分后分为地主与农民两方。
-- 地主获得底牌。
-- 支持常见斗地主牌型，牌型识别由 `static/js/parser.js` 和 `game.js` 处理。
-- 结算时地主按双倍基础分输赢，农民按单倍基础分输赢。
+The bots and the local advisor are separate paths:
 
-### 掼蛋
+- **AI seats** make moves on behalf of server-managed bot players.
+- **智囊** analyzes the local hand and selects/highlights a legal candidate for the human player.
+- Mahjong advisor calculations include shanten, effective tiles (ukeire), remaining-tile counts, and discard danger.
+- The advisor does not replace the server rule engine and does not submit a move by itself.
 
-- 四人参与，两副牌，每人 27 张。
-- 座位 `0/2` 为一队，`1/3` 为一队。
-- 当前级牌从 `2` 开始，红桃级牌为逢人配。
-- 头游队伍升级：双下 `+3`，二三名 `+2`，其他胜局 `+1`。
+## Leaderboard API
 
-第一类牌型：
-
-- 单张：任意一张牌。
-- 对子：两张点数相同的牌，包括对大王或对小王。
-- 三连对：三对连续对子，例如 `223344`。
-- 三同张：三张点数相同的牌。
-- 二连三：两组三同张，例如 `333444`。
-- 三带二：三同张带一个对子，例如 `55522`。
-- 顺子：五张连续单牌，例如 `23456`。
-
-第一类牌型之间必须牌型相同才能压牌；三带二只比较三同张大小。
-
-连续牌型中，`A` 可以作为最小值，也可以作为 `K+1`。例如 `A2345`、`23456`、`10JQKA`、`AA2233`、`QQKKAA` 都是合法连续牌型。
-
-第二类牌型：
-
-- 炸弹：四张或四张以上点数相同的牌。
-- 同花顺：五张花色相同的顺子。
-- 天王炸：大小王各两张。
-
-第二类可以压任意第一类。第二类内部顺序：
-
-- 天王炸最大。
-- 炸弹张数越多越大，张数相同比点数。
-- 同花顺按顺子点数比较。
-- 同花顺可以压五张及以下炸弹，六张及以上炸弹大于同花顺。
-
-## 智囊与 AI
-
-斗地主智囊由 `static/js/ai-suggest.js` 提供。
-
-掼蛋智囊由 `static/js/guandan-suggest.js` 提供，服务端机器人与前端“智囊”共用同一套规则分析。策略原则：
-
-- 自由出牌时优先减少手数。
-- 跟牌时尽量用最小可压牌。
-- 队友出牌时通常不压，除非可以直接走完。
-- 炸弹和逢人配会尽量保留，除非局势需要。
-
-## 积分系统
-
-数据库持久化是可选能力。未配置数据库时，游戏仍可正常运行，但不会保存积分。
-
-启动时自动创建两张表：
+Supported `gameType` values: `doudizhu`, `guandan`, and `mahjong`.
 
 ```text
-pre_doudizhu_score
-pre_guandan_score
+GET /api/score/top?gameType=mahjong&limit=20
+GET /api/score/me?gameType=mahjong&token=<JWT>
 ```
 
-表前缀由 `DB_TABLE_PREFIX` 决定。
+`limit` is clamped to a maximum of 100. Authenticated human players are recorded; guests, bots, and spectators are excluded from persistent scores.
 
-HTTP 查询接口：
-
-| 接口 | 说明 |
-| --- | --- |
-| `GET /api/score/me?gameType=doudizhu&token=<JWT>` | 当前用户斗地主战绩 |
-| `GET /api/score/me?gameType=guandan&token=<JWT>` | 当前用户掼蛋战绩 |
-| `GET /api/score/top?gameType=doudizhu&limit=20` | 斗地主积分榜 |
-| `GET /api/score/top?gameType=guandan&limit=20` | 掼蛋积分榜 |
-
-只有通过 JWT 登录的真人玩家会计入积分。游客、AI、观战用户不记录。
-
-## Discuz SSO
-
-项目支持通过 Discuz 签发 JWT 进行单点登录。
-
-- 论坛端示例代码在 `discuz-sso/`。
-- 游戏端通过 Socket.IO `auth.token` 校验 JWT。
-- 登录成功后可同步 Discuz 用户名和头像。
-
-详细部署见 [discuz-sso/README.md](discuz-sso/README.md)。
-
-## 项目结构
+## Project layout
 
 ```text
-.
-├── server.js                    # Express + Socket.IO 入口、房间、AI、API
-├── game.js                      # 斗地主状态机
-├── guandan-game.js              # 掼蛋状态机与服务端判牌
-├── db.js                        # 分玩法积分持久化
-├── core-ai.js                   # 原斗地主 AI 辅助
-├── core-validator.js            # 原斗地主校验辅助
-├── config.example.json          # 本地配置示例
-├── discuz-sso/                  # Discuz JWT SSO 示例
-└── static/
-    ├── index.html               # Vue 2 单页应用
-    ├── css/
-    │   ├── theme.css            # 主题变量
-    │   └── style.css            # 主要布局与组件样式
-    ├── images/                  # 扑克图、桌面素材
-    └── js/
-        ├── parser.js            # 斗地主牌型解析
-        ├── ai-suggest.js        # 斗地主智囊
-        ├── guandan-suggest.js   # 掼蛋智囊
-        ├── effects.js           # 音效与特效
-        ├── vue.min.js
-        ├── jquery.min.js
-        └── layer/               # 弹窗组件
+server.js                 HTTP, Socket.IO, rooms, auth, score routes
+game.js                   Doudizhu state machine and rule validation
+guandan-game.js           Guandan state machine and rule validation
+mahjong-game.js           Mahjong state machine and tile actions
+core-ai.js                Shared AI helpers
+core-validator.js         Shared legal-action validation
+db.js                     Optional MySQL score persistence
+static/index.html         Vue 2 client and table UI
+static/js/smart-ai.js     Doudizhu/Guandan smart AI
+static/js/mahjong-ai.js   Mahjong advisor and AI calculations
+test/ai.test.js           AI regression tests
+discuz-sso/               Discuz SSO integration examples
 ```
 
-## 常用 Socket 事件
+## Production notes
 
-客户端到服务端：
-
-- `LOGIN`
-- `CREATE_ROOM`
-- `QUICK_JOIN`
-- `JOIN_ROOM`
-- `SITDOWN`
-- `PREPARE`
-- `CALL_SCORE`
-- `PLAY_CARD`
-- `USER_MESSAGE`
-- `SPECTATE`
-- `ADD_BOTS`
-- `REMOVE_BOTS`
-
-服务端到客户端：
-
-- `LOGIN_SUCCESS`
-- `LOGIN_FAIL`
-- `REFRESH_LIST`
-- `POS_STATUS_CHANGE`
-- `GAME_START`
-- `CTX_USER_CHANGE`
-- `CTX_PLAY_CHANGE`
-- `SHOW_TOP_CARD`
-- `PLAY_CARD_SUCCESS`
-- `PLAY_CARD_ERROR`
-- `GAME_OVER`
-- `USER_MESSAGE`
-- `MY_SCORE`
-
-## 开发与验证
-
-语法检查：
+Run the Node process with a process manager and place an HTTPS reverse proxy in front of port `8002`:
 
 ```bash
-node --check server.js
-node --check db.js
-node --check game.js
-node --check guandan-game.js
-node --check static/js/guandan-suggest.js
-node --check static/js/effects.js
+PORT=8002 \
+JWT_SECRET='replace-with-a-strong-secret' \
+DB_HOST=127.0.0.1 \
+DB_USER=cardroom \
+DB_NAME=cardroom \
+node server.js
 ```
 
-本地规则回归建议覆盖：
+Use the same `JWT_SECRET` as the SSO issuer, restrict MySQL access, and keep the application port private when Nginx or another reverse proxy is enabled.
 
-- 掼蛋 `A2345`、`23456`、`10JQKA`
-- 掼蛋三连对、二连三、三带二
-- 同花顺压五张炸，六张炸压同花顺
-- 天王炸压所有牌型
-- 斗地主叫分、底牌、出牌、结算
+## Search terms
 
-## 部署建议
-
-- 使用 HTTPS，特别是启用 Discuz SSO 时。
-- 生产环境必须设置强随机 `JWT_SECRET`。
-- 建议用 systemd、pm2 或容器托管 Node 进程。
-- 如在 Cloudflare 等代理后运行，保留 WebSocket 支持。
-- 数据库账号只授予游戏积分表需要的权限。
-
-systemd 示例：
-
-```ini
-[Unit]
-Description=Quege Card Room
-After=network.target
-
-[Service]
-WorkingDirectory=/var/www/quege-card-room
-ExecStart=/usr/bin/node server.js
-Restart=always
-Environment=PORT=8002
-Environment=JWT_SECRET=replace-with-a-strong-secret
-Environment=DB_HOST=127.0.0.1
-Environment=DB_USER=discuz
-Environment=DB_PASSWORD=replace-with-db-password
-Environment=DB_NAME=discuz
-Environment=DB_TABLE_PREFIX=pre_
-
-[Install]
-WantedBy=multi-user.target
-```
+online card room, multiplayer card game, real-time card game, Doudizhu, 斗地主, Guandan, 掼蛋, Mahjong, 麻将, Mahjong AI, card game AI, Node.js game server, Socket.IO game, Vue 2 card game, MySQL leaderboard, seasonal ranking, Discuz SSO.
 
 ## License
 
-代码以 [MIT License](LICENSE) 发布。
-
-`static/images/` 中的牌面、桌面等素材仅作为演示资源；商业使用请确认素材授权或自行替换。
+MIT. See [LICENSE](LICENSE).
