@@ -131,6 +131,13 @@ async function init() {
 }
 
 function isReady() { return ready && pool; }
+async function close() {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    ready = false;
+  }
+}
 function tableFor(gameType) {
   return TABLES[gameType] || TABLES.doudizhu;
 }
@@ -499,7 +506,7 @@ async function backfillSiteStats(payload = {}) {
 }
 
 module.exports = {
-  init, isReady, recordPlayer, getUserScore, getTopScores,
+  init, close, isReady, recordPlayer, getUserScore, getTopScores,
   saveHistory, listHistory, getHistory, recordSiteStat, getSiteStats,
   getHistoricalGameStats, backfillSiteStats,
   TABLE, TABLES, HISTORY_TABLE, SITE_STATS_TABLE, SITE_STATS_META_TABLE,

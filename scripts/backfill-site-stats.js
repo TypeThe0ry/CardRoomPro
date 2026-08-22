@@ -80,6 +80,7 @@ async function main() {
     force: process.argv.includes('--force'),
   });
   console.log(JSON.stringify({ log: access, byGame, stats }, null, 2));
+  await db.close();
 }
 
 main().catch(err => { console.error('[backfill] failed:', err); process.exit(1); });
