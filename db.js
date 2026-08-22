@@ -141,7 +141,8 @@ async function getTopScores(limit = 20, gameType = 'doudizhu') {
   if (!isReady()) return [];
   const tableName = tableFor(gameType);
   try {
-    const n = Math.max(1, limit | 0);
+    const parsedLimit = Number(limit);
+    const n = Number.isFinite(parsedLimit) ? Math.min(100, Math.max(1, Math.floor(parsedLimit))) : 20;
     const [rows] = await pool.query(
       `SELECT uid, username, score, games, wins, losses
        FROM \`${tableName}\` ORDER BY score DESC, wins DESC LIMIT ?`,

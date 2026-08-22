@@ -123,7 +123,8 @@ app.get('/api/score/me', (req, res) => {
 });
 // HTTP：积分榜
 app.get('/api/score/top', (req, res) => {
-  const limit = Number(req.query.limit || 20);
+  const requestedLimit = Number(req.query.limit || 20);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 20;
   const gameType = normalizeGameType(req.query.gameType);
   db.getTopScores(limit, gameType).then(rows => res.json(rows || [])).catch(() => res.json([]));
 });

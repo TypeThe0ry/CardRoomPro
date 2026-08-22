@@ -1285,41 +1285,35 @@
           };
           var formatInt = function (value) {
             var n = Number(value);
-            return Number.isFinite(n) ? (n | 0) : 0;
+            return Number.isFinite(n) ? Math.round(n) : 0;
           };
           var formatGames = function (value) {
             var n = Number(value);
-            return Number.isFinite(n) && n > 0 ? (n | 0) : 0;
+            return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
           };
           var formatWinRate = function (wins, gamesN) {
             return gamesN ? Math.round(formatGames(wins) * 1000 / gamesN) / 10 : 0;
           };
           var games = ['doudizhu', 'guandan', 'mahjong'];
           var labels = { doudizhu: '斗地主', guandan: '掼蛋', mahjong: '麻将' };
+          var icons = { doudizhu: '斗', guandan: '蛋', mahjong: '麻' };
+          var activeGame = games.indexOf(self.selectedGameType) > -1 ? self.selectedGameType : 'doudizhu';
+          var loading = false;
           self.topLists = { doudizhu: [], guandan: [], mahjong: [] };
           self.myScores = { doudizhu: null, guandan: null, mahjong: null };
-          games.forEach(function (gt) {
-            fetch('/api/score/top?gameType=' + gt + '&limit=20').then(function (r) { return r.json(); }).then(function (rows) {
-              self.topLists[gt] = Array.isArray(rows) ? rows : [];
-            }).catch(function () {});
-            if (self.myUser && self.myUser.uid) {
-              var token = self.token || localStorage.getItem('discuz_token') || '';
-              fetch('/api/score/me?gameType=' + gt + '&token=' + encodeURIComponent(token)).then(function (r) { return r.json(); }).then(function (row) {
-                self.myScores[gt] = row && row.uid ? row : null;
-              }).catch(function () {});
-            }
-          });
-          var html = '<div id="stats-panel" class="stats-panel">' +
-            '<div class="stats-head"><strong>' + escapeHtml((self.myUser && self.myUser.username) || '访客') + '</strong><span>分玩法独立积分</span></div>' +
-            '<div id="stats-mine" class="stats-mine"></div>' +
-            '<div id="stats-top" class="stats-grid"><div class="stats-loading">积分榜加载中...</div></div>';
-          if (self.myUser && self.myUser.uid) {
-            html += '<div class="stats-foot"><a href="javascript:;" id="stats-logout">退出登录</a></div>';
-          }
+          var html = '<div id="stats-panel" class="stats-panel stats-rebuild">' +
+            '<div class="lb-hero">' +
+              '<div class="lb-hero-copy"><span class="lb-eyebrow">雀阁 · 赛季积分</span><h2>积分榜</h2><p>三种玩法独立排名，胜负与积分实时结算。</p></div>' +
+              '<button type="button" class="lb-refresh" id="stats-refresh"><span>↻</span>刷新</button>' +
+            '</div>' +
+            '<div id="stats-mine" class="lb-overview"><div class="stats-loading">战绩加载中...</div></div>' +
+            '<div id="stats-tabs" class="lb-tabs" role="tablist"></div>' +
+            '<div id="stats-top" class="lb-board-wrap"><div class="stats-loading">积分榜加载中...</div></div>';
+          if (self.myUser && self.myUser.uid) html += '<div class="stats-foot"><a href="javascript:;" id="stats-logout">退出登录</a></div>';
           html += '</div>';
           var idx = layer.open({
             type: 1,
-            title: '战绩 / 积分榜',
+            title: '积分榜',
             shadeClose: true,
             area: 'auto',
             maxWidth: 0,
@@ -1327,23 +1321,46 @@
           });
           var scoreCard = function (gt) {
             var s = self.myScores[gt];
-            if (!self.myUser || !self.myUser.uid) return '<div class="stats-card"><b>' + labels[gt] + '</b><em>访客不记录战绩</em></div>';
-            if (!s) return '<div class="stats-card"><b>' + labels[gt] + '</b><em>暂无对局记录</em></div>';
+            if (!self.myUser || !self.myUser.uid) return '<article class="lb-card lb-card-guest"><div class="lb-card-top"><span><i>' + icons[gt] + '</i>' + labels[gt] + '</span><b>—</b></div><strong>游客模式</strong><small>登录后保存你的积分与排名</small></article>';
+            if (!s) return '<article class="lb-card"><div class="lb-card-top"><span><i>' + icons[gt] + '</i>' + labels[gt] + '</span><b>未上榜</b></div><strong>—</strong><small>暂无对局记录</small></article>';
             var gamesN = formatGames(s.games);
             var winsN = formatGames(s.wins);
-            var winRate = formatWinRate(winsN, gamesN);
-            return '<div class="stats-card"><b>' + labels[gt] + '</b><strong>' + formatInt(s.score) + '</strong><span>' + winsN + '胜 / ' + gamesN + '局 · ' + winRate + '%</span></div>';
+            var lossesN = formatGames(s.losses);
+            var rank = (self.topLists[gt] || []).findIndex(function (row) { return String(row.uid) === String(s.uid); });
+            return '<article class="lb-card"><div class="lb-card-top"><span><i>' + icons[gt] + '</i>' + labels[gt] + '</span><b>' + (rank > -1 ? 'NO.' + (rank + 1) : '未上榜') + '</b></div><strong>' + formatInt(s.score) + '</strong><div class="lb-card-meta"><span>' + winsN + '胜 ' + lossesN + '负</span><span>' + formatWinRate(winsN, gamesN) + '% 胜率</span></div><small>' + gamesN + ' 局 · 当前玩法积分</small></article>';
           };
           var board = function (gt) {
             var rows = self.topLists[gt] || [];
-            if (!rows.length) return '<div class="stats-board"><h4>' + labels[gt] + ' TOP 20</h4><div class="stats-empty">暂无数据</div></div>';
+            var top = rows.slice(0, 3);
+            var podiumOrder = [1, 0, 2].filter(function (i) { return !!top[i]; });
+            var podium = podiumOrder.map(function (i) {
+              var r = top[i];
+              var winsN = formatGames(r.wins);
+              return '<div class="lb-podium-item rank-' + (i + 1) + '"><div class="lb-podium-medal">' + (i + 1) + '</div><strong>' + escapeHtml(r.username || ('uid#' + r.uid)) + '</strong><b>' + formatInt(r.score) + '</b><small>' + formatWinRate(winsN, formatGames(r.games)) + '% 胜率</small></div>';
+            }).join('');
             var trs = rows.map(function (r, i) {
               var gamesN = formatGames(r.games);
               var rate = formatWinRate(r.wins, gamesN);
               var playerName = r.username || ('uid#' + r.uid);
-              return '<tr><td>' + (i + 1) + '</td><td>' + escapeHtml(playerName) + '</td><td>' + formatInt(r.score) + '</td><td>' + rate + '%</td><td>' + gamesN + '</td></tr>';
+              var mine = self.myUser && self.myUser.uid && String(r.uid) === String(self.myUser.uid) ? ' class="is-me"' : '';
+              var rankText = i < 3 ? ['🥇', '🥈', '🥉'][i] : (i + 1);
+              return '<tr' + mine + '><td><b class="lb-rank-cell">' + rankText + '</b></td><td><span class="lb-player"><i>' + escapeHtml(String(playerName).slice(0, 1).toUpperCase()) + '</i>' + escapeHtml(playerName) + '</span></td><td class="lb-score-cell">' + formatInt(r.score) + '</td><td>' + rate + '%</td><td>' + gamesN + '</td></tr>';
             }).join('');
-            return '<div class="stats-board"><h4>' + labels[gt] + ' TOP 20</h4><table><thead><tr><th>#</th><th>玩家</th><th>积分</th><th>胜率</th><th>局数</th></tr></thead><tbody>' + trs + '</tbody></table></div>';
+            if (!rows.length) return '<section class="lb-board"><div class="lb-board-head"><div><span>当前榜单</span><h3>' + labels[gt] + '</h3></div><small>暂无积分数据</small></div><div class="lb-empty"><span>✦</span><b>还没有上榜玩家</b><small>完成一局对战后，这里会记录你的成绩。</small></div></section>';
+            return '<section class="lb-board"><div class="lb-board-head"><div><span>当前榜单 · TOP ' + Math.min(rows.length, 20) + '</span><h3>' + labels[gt] + '</h3></div><small>共 ' + rows.length + ' 位上榜玩家</small></div><div class="lb-podium">' + podium + '</div><div class="lb-table-wrap"><table><thead><tr><th>#</th><th>玩家</th><th>积分</th><th>胜率</th><th>局数</th></tr></thead><tbody>' + trs + '</tbody></table></div></section>';
+          };
+          var renderTabs = function () {
+            var tabs = document.getElementById('stats-tabs');
+            if (!tabs) return;
+            tabs.innerHTML = games.map(function (gt) {
+              return '<button type="button" class="lb-tab' + (gt === activeGame ? ' active' : '') + '" data-game="' + gt + '" role="tab"><i>' + icons[gt] + '</i><span>' + labels[gt] + '</span></button>';
+            }).join('');
+            tabs.querySelectorAll('.lb-tab').forEach(function (tab) {
+              tab.onclick = function () {
+                activeGame = tab.getAttribute('data-game') || 'doudizhu';
+                render();
+              };
+            });
           };
           var fitStatsDialog = function () {
             requestAnimationFrame(function () {
@@ -1367,27 +1384,51 @@
               layerEl.style.top = Math.max(12, Math.round((window.innerHeight - titleHeight - contentHeight) / 2)) + 'px';
             });
           };
-          var fill = function () {
+          var render = function () {
             var mine = document.getElementById('stats-mine');
             var top = document.getElementById('stats-top');
-            if (mine) mine.innerHTML = scoreCard('doudizhu') + scoreCard('guandan') + scoreCard('mahjong');
-            if (top) top.innerHTML = board('doudizhu') + board('guandan');
-            fitStatsDialog();
-          };
-          var tries = 0;
-          var timer = setInterval(function () {
-            if (tries++ > 20) { clearInterval(timer); fill(); return; }
-            fill();
-          }, 200);
-          // 退出登录
-          setTimeout(function () {
-            var a = document.getElementById('stats-logout');
-            if (a) a.onclick = function () {
+            if (mine) mine.innerHTML = games.map(scoreCard).join('');
+            renderTabs();
+            if (top) top.innerHTML = board(activeGame);
+            var refresh = document.getElementById('stats-refresh');
+            if (refresh) {
+              refresh.disabled = loading;
+              refresh.classList.toggle('is-loading', loading);
+              refresh.onclick = loadData;
+            }
+            var logout = document.getElementById('stats-logout');
+            if (logout) logout.onclick = function () {
               try { localStorage.removeItem('discuz_token'); } catch (e) {}
               layer.close(idx);
               location.reload();
             };
-          }, 0);
+            fitStatsDialog();
+          };
+          var loadData = function () {
+            if (loading) return;
+            loading = true;
+            render();
+            var token = self.token || localStorage.getItem('discuz_token') || '';
+            var topRequests = games.map(function (gt) {
+              return fetch('/api/score/top?gameType=' + gt + '&limit=20').then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
+                self.topLists[gt] = Array.isArray(rows) ? rows : [];
+              }).catch(function () { self.topLists[gt] = []; });
+            });
+            var mineRequests = self.myUser && self.myUser.uid ? games.map(function (gt) {
+              return fetch('/api/score/me?gameType=' + gt + '&token=' + encodeURIComponent(token)).then(function (r) { return r.ok ? r.json() : null; }).then(function (row) {
+                self.myScores[gt] = row && row.uid ? row : null;
+              }).catch(function () { self.myScores[gt] = null; });
+            }) : [];
+            Promise.all(topRequests.concat(mineRequests)).then(function () {
+              loading = false;
+              render();
+            }, function () {
+              loading = false;
+              render();
+            });
+          };
+          render();
+          loadData();
         },
         goDiscuzLogin: function () {
           // 跨域桥接：论坛登录 → 生成 JWT → 302 回本页并带 #token=xxx
