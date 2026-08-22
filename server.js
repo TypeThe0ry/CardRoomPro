@@ -49,6 +49,12 @@ const express = require('express'),
   }
 })();
 
+app.use((req, res, next) => {
+  if (req.method === 'GET' && (req.path === '/' || req.path === '/index.html')) {
+    db.recordSiteStat('page_views').catch(() => {});
+  }
+  next();
+});
 app.use(express.static(`${__dirname}/static`));
 app.get('/', function (req, res) {
   res.sendFile(`${__dirname}/index.html`);
@@ -127,6 +133,49 @@ app.get('/api/score/top', (req, res) => {
   const limit = Number.isFinite(requestedLimit) ? Math.min(100, Math.max(1, Math.floor(requestedLimit))) : 20;
   const gameType = normalizeGameType(req.query.gameType);
   db.getTopScores(limit, gameType).then(rows => res.json(rows || [])).catch(() => res.json([]));
+});
+
+function historyViewerFromRequest(req) {
+  const viewer = {
+    uid: '',
+    username: '',
+    guestId: String(req.query.guestId || req.headers['x-cardroom-guest'] || '').trim().slice(0, 128),
+  };
+  const token = req.query.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken');
+      const payload = jwt.verify(token, proto.JWT_SECRET);
+      if (payload && payload.uid) {
+        viewer.uid = String(payload.uid);
+        viewer.username = String(payload.username || viewer.username || '').slice(0, 64);
+      }
+    } catch (e) {}
+  }
+  return viewer;
+}
+
+// 历史战局：公开房所有人可看；私密房只允许本局参与者查看。
+app.get('/api/history', (req, res) => {
+  const requestedGame = String(req.query.gameType || '').trim();
+  const gameType = requestedGame && requestedGame !== 'all' ? normalizeGameType(requestedGame) : '';
+  db.listHistory({
+    gameType,
+    limit: req.query.limit,
+    offset: req.query.offset,
+    viewer: historyViewerFromRequest(req),
+  }).then(data => res.json(data)).catch(() => res.status(500).json({ error: 'history_error' }));
+});
+
+app.get('/api/history/:id', (req, res) => {
+  db.getHistory(req.params.id, historyViewerFromRequest(req)).then(record => {
+    if (!record) return res.status(404).json({ error: 'history_not_found' });
+    res.json(record);
+  }).catch(() => res.status(500).json({ error: 'history_error' }));
+});
+
+app.get('/api/site-stats', (req, res) => {
+  db.getSiteStats().then(stats => res.json(stats)).catch(() => res.status(500).json({ error: 'stats_error' }));
 });
 
 // HTTP：SSO 密钥健康检查（仅返回指纹，不泄漏明文）
@@ -329,6 +378,7 @@ function GameServer(port) {
   this.gameDatas = {};
   this.botTimers = {};
   this.mahjongClaimTimers = {};
+  this.roundHistories = {};
   this.nextRoomId = 1;
 }
 const proto = {
@@ -546,7 +596,7 @@ const proto = {
     }
   },
   addClient(socket, data) {
-    this.clients.push({ userName: data.userName, uid: data.uid || 0, avatarUrl: data.avatarUrl || '', socket: socket, deskId: '', posId: '' });
+    this.clients.push({ userName: data.userName, uid: data.uid || 0, guestId: data.guestId || '', avatarUrl: data.avatarUrl || '', socket: socket, deskId: '', posId: '' });
   },
   getClient(socket) {
     for (let i = 0, len = this.clients.length; i < len; i++) {
@@ -601,6 +651,61 @@ const proto = {
     }
     return false;
   },
+  createRoundHistory(deskId) {
+    const room = this.getDesk(deskId);
+    if (!room) return;
+    const players = room.positions.filter(p => p.state > 0).map(p => {
+      const client = this.clients.find(c => c.deskId === deskId && Number(c.posId) === Number(p.posId));
+      return {
+        posId: Number(p.posId),
+        uid: client && client.uid ? String(client.uid) : '',
+        guestId: client && client.guestId ? String(client.guestId) : '',
+        username: String((client && client.userName) || p.userName || `玩家${Number(p.posId) + 1}`),
+        isBot: !!p.isBot,
+      };
+    });
+    this.roundHistories[deskId] = {
+      roomCode: room.roomCode,
+      deskId: room.deskId,
+      gameType: room.gameType,
+      gameLabel: room.gameLabel,
+      isPrivate: !!room.isPrivate,
+      startedAt: Date.now(),
+      endedAt: 0,
+      players,
+      moves: [],
+      result: {},
+    };
+    db.recordSiteStat('game_starts');
+    db.recordSiteStat('player_rounds', players.filter(p => !p.isBot).length);
+  },
+  recordRoundMove(deskId, move) {
+    const record = this.roundHistories[deskId];
+    if (!record || !move) return;
+    const copy = Object.assign({}, move, {
+      seq: record.moves.length + 1,
+      at: Date.now(),
+    });
+    if (Array.isArray(move.cards)) {
+      copy.cards = move.cards.map(card => ({ value: Number(card.value), type: Number(card.type), ...(card.deck == null ? {} : { deck: Number(card.deck) }) }));
+    }
+    if (move.card) {
+      copy.card = { value: Number(move.card.value), type: Number(move.card.type), ...(move.card.deck == null ? {} : { deck: Number(move.card.deck) }) };
+    }
+    if (move.meld && Array.isArray(move.meld.cards)) {
+      copy.meld = Object.assign({}, move.meld, { cards: move.meld.cards.map(card => ({ value: Number(card.value), type: Number(card.type), ...(card.deck == null ? {} : { deck: Number(card.deck) }) })) });
+    }
+    record.moves.push(copy);
+  },
+  finishRoundHistory(deskId, result) {
+    const record = this.roundHistories[deskId];
+    if (!record) return;
+    record.endedAt = Date.now();
+    record.result = result || {};
+    delete this.roundHistories[deskId];
+    db.recordSiteStat('games_completed');
+    db.saveHistory(record).catch(err => console.error('[history] 保存失败：', err && err.message));
+  },
   startGame(deskId) {
     const room = this.getDesk(deskId);
     if (!room) return;
@@ -612,6 +717,7 @@ const proto = {
     const game = this.gameDatas[deskId];
     game.init();
     const cards = game.start().getCards();
+    this.createRoundHistory(deskId);
     this.updateRoomStatus(deskId, 2);
     this.refreshLobby();
     if (room.gameType === 'guandan') {
@@ -795,6 +901,7 @@ const proto = {
     this.clearBotTimer(deskId);
     this.clearMahjongClaimTimer(deskId);
     this.broadCastRoom('GAME_OVER', deskId, result);
+    this.finishRoundHistory(deskId, result);
     this.recordResultToDb(deskId, result);
     room.positions.forEach(p => this.updatePosStatus(deskId, p.posId, 1));
     this.updateRoomStatus(deskId, 3);
@@ -869,6 +976,7 @@ const proto = {
       const decision = MahjongAI.chooseClaim(game.getCardsByPosId(posId) || [], options, pending.card, aiOptions);
       const action = options.includes(decision.action) ? decision.action : 'pass';
       ret = action === 'pass' ? game.passClaim(posId) : game.claim(posId, action);
+      this.recordRoundMove(deskId, { type: 'mahjong', action, posId: Number(posId), card: pending.card, meld: ret && ret.meld, source: 'ai' });
       if (ret && ret.result) {
         this.finishMahjongGame(deskId, ret.result);
         return;
@@ -892,6 +1000,7 @@ const proto = {
     const options = game.getTurnOptions(posId);
     if (options.includes('hu')) {
       ret = game.finishWin(posId, null, '自摸');
+      this.recordRoundMove(deskId, { type: 'mahjong', action: 'hu', posId: Number(posId), source: 'ai' });
       this.finishMahjongGame(deskId, ret.result);
       return;
     }
@@ -900,6 +1009,7 @@ const proto = {
     if (gangDecision.action === 'gang') {
       ret = game.concealedGang(posId, gangDecision.card);
       if (ret && ret.status) {
+        this.recordRoundMove(deskId, { type: 'mahjong', action: 'gang', posId: Number(posId), card: gangDecision.card, meld: ret.meld, source: 'ai' });
         if (ret.result) {
           this.finishMahjongGame(deskId, ret.result);
           return;
@@ -914,6 +1024,7 @@ const proto = {
     const pick = hand.find(card => Number(card.value) === Number(advice.card && advice.card.value)) || hand[hand.length - 1];
     ret = game.discard(posId, pick);
     if (!ret || !ret.status) return;
+    this.recordRoundMove(deskId, { type: 'mahjong', action: 'discard', posId: Number(posId), card: ret.card || pick, source: 'ai' });
     this.broadCastRoom('MAHJONG_DISCARD', deskId, { posId, card: ret.card });
     if (game.getStatus() === 3) {
       this.finishMahjongGame(deskId, game.getResult());
@@ -930,6 +1041,7 @@ const proto = {
     const bid = SmartAI.doudizhu.recommendBid(hand, ctxScore);
     const score = bid.score;
     const status = game.next(posId, score).getStatus();
+    this.recordRoundMove(deskId, { type: 'call', posId: Number(posId), score: Number(score), source: 'ai' });
     if (status == 1) {
       this.broadCastRoom('CTX_USER_CHANGE', deskId, {
         ctxPos: game.getContextPosId(),
@@ -1009,6 +1121,7 @@ const proto = {
       }
     }
     game.next(posId, data);
+    this.recordRoundMove(deskId, { type: 'play', posId: Number(posId), cards: data, pass: isPass, cardType: ret.type || '', source: 'ai' });
     this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
       ctxData: { len: data.length, key: ret.key, type: ret.type, cards: data, posId },
       posId: game.getContextPosId(), timeout: DOU_DIZHU_STEP_TIMEOUT, isPass
@@ -1016,6 +1129,7 @@ const proto = {
     if (game.getStatus() === 3) {
       const result = game.getResult();
       this.broadCastRoom('GAME_OVER', deskId, result);
+      this.finishRoundHistory(deskId, result);
       this.recordResultToDb(deskId, result);
       this.updatePosStatus(deskId, 0, 1);
       this.updatePosStatus(deskId, 1, 1);
@@ -1075,6 +1189,7 @@ const proto = {
     if (!ret || !ret.status) return;
 
     game.next(posId, data);
+    this.recordRoundMove(deskId, { type: 'play', posId: Number(posId), cards: data, pass: isPass, cardType: ret.type || '', source: 'ai' });
     const trickReset = !!(game.lastCardInfo && !game.lastCardInfo.len);
     this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
       ctxData: { len: data.length, key: ret.key, type: ret.type, cards: data, posId },
@@ -1088,6 +1203,7 @@ const proto = {
       const result = game.getResult();
       this.applyGuandanResult(deskId, result);
       this.broadCastRoom('GAME_OVER', deskId, result);
+      this.finishRoundHistory(deskId, result);
       this.recordResultToDb(deskId, result);
       room.positions.forEach(p => this.updatePosStatus(deskId, p.posId, 1));
       this.updateRoomStatus(deskId, 3);
@@ -1141,6 +1257,7 @@ const proto = {
 
     io.on('connection', function (socket) {
       console.log('有客户端接入，时间： %s', time());
+      db.recordSiteStat('socket_connections');
       // 校验失败 → 立刻通知前端，避免它卡在"正在登录…"
       if (socket.tokenError) {
         socket.emit('LOGIN_FAIL', { msg: socket.tokenError, code: 'TOKEN_INVALID' });
@@ -1166,9 +1283,11 @@ const proto = {
           console.error('自动登录出错', e);
         }
       }
-      socket.on('LOGIN', userName => {
+      socket.on('LOGIN', data => {
+        const userName = typeof data === 'string' ? data : (data && data.userName);
+        const guestId = typeof data === 'object' && data ? String(data.guestId || '').slice(0, 128) : '';
         if (this.checkUserName(userName)) {
-          this.addClient(socket, { userName });
+          this.addClient(socket, { userName, guestId });
           socket.emit('LOGIN_SUCCESS', this.getLobbyRooms());
           console.log('有客户端登录，时间： %s', time());
         } else {
@@ -1417,6 +1536,7 @@ const proto = {
         if (!room || room.gameType !== 'mahjong' || !game || game.getStatus() !== 2) return;
         const posId = Number(client.posId);
         const action = data && data.action;
+        const pendingBefore = game.getPendingClaim && game.getPendingClaim();
         let ret;
         if (action === 'discard') {
           ret = game.discard(posId, data.card);
@@ -1443,6 +1563,14 @@ const proto = {
           socket.emit('MAHJONG_ERROR', { msg: (ret && ret.msg) || '操作无效' });
           return;
         }
+        this.recordRoundMove(client.deskId, {
+          type: 'mahjong',
+          action,
+          posId,
+          card: (data && data.card) || (pendingBefore && pendingBefore.card),
+          meld: ret.meld,
+          source: 'human',
+        });
         if (ret.result || game.getStatus() === 3) {
           this.finishMahjongGame(client.deskId, ret.result || game.getResult());
           return;
@@ -1467,6 +1595,7 @@ const proto = {
           return;
         }
         const status = game.next(posId, score).getStatus();
+        this.recordRoundMove(deskId, { type: 'call', posId: Number(posId), score: Number(score), source: 'human' });
         if (status == 1) {
           const ctxPos = game.getContextPosId();
           const ctxScore = game.getContextScore();
@@ -1517,7 +1646,8 @@ const proto = {
           const { status } = ret;
           const allowMove = status || (isPass && (!room || room.gameType === 'doudizhu'));
           if (allowMove) {
-            game.next(posId, data);
+          game.next(posId, data);
+            this.recordRoundMove(deskId, { type: 'play', posId: Number(posId), cards: data, pass: isPass, cardType: ret.type || '', source: 'human' });
             const trickReset = !!(room && room.gameType === 'guandan' && game.lastCardInfo && !game.lastCardInfo.len);
             this.broadCastRoom('CTX_PLAY_CHANGE', deskId, {
               ctxData: {
@@ -1539,6 +1669,7 @@ const proto = {
                 this.applyGuandanResult(deskId, result);
               }
               this.broadCastRoom('GAME_OVER', deskId, result)
+              this.finishRoundHistory(deskId, result);
               this.recordResultToDb(deskId, result);
               const seats = room ? room.positions.length : 3;
               for (let i = 0; i < seats; i++) {
@@ -1669,6 +1800,7 @@ const proto = {
           return;
         }
         this.updateClientState(socket, deskId, 'spec');
+        db.recordSiteStat('spectator_visits');
         const game = this.gameDatas[deskId];
         const status = game && game.getStatus ? game.getStatus() : 0;
         const gameInProgress = status >= 1 && status < 3;

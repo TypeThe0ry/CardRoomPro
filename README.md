@@ -29,6 +29,8 @@ CardRoomPro (雀阁 · 纸牌房) is a real-time multiplayer card-room platform 
 - **Rule-aware AI:** legal move generation, bidding and role decisions, hand/discard evaluation, Mahjong shanten and effective-tile analysis, and discard-risk scoring.
 - **Advisor mode (智囊):** highlights a legal recommendation for the local player without automatically submitting the move.
 - **Season leaderboard:** separate Doudizhu, Guandan, and Mahjong rankings with podium, top-20 table, personal stats, and current-player highlighting.
+- **Game history and replay:** completed rounds are saved with players, actions, results, and step-by-step replay. Public-room records are visible to everyone; private-room records are restricted to participants.
+- **Usage analytics:** page visits, socket connections, game starts, completed rounds, player-rounds, and spectator visits are available from the statistics panel.
 - **Optional integrations:** MySQL score persistence and Discuz-compatible JWT single sign-on.
 - **Responsive UI:** lobby works on desktop and mobile; card tables are optimized for landscape play on small screens.
 
@@ -117,6 +119,16 @@ GET /api/score/me?gameType=mahjong&token=<JWT>
 ```
 
 `limit` is clamped to a maximum of 100. Authenticated human players are recorded; guests, bots, and spectators are excluded from persistent scores.
+
+## History and statistics API
+
+```text
+GET /api/history?gameType=all&limit=30
+GET /api/history/<id>
+GET /api/site-stats
+```
+
+History access is enforced on the server. Public records are readable without login; private records require the participant's JWT identity or the stable guest identity issued by the client. When MySQL is disabled, history and statistics use an in-memory fallback for the current process.
 
 ## Project layout
 

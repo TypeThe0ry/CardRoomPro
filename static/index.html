@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=layout-20260705-2">
+  <link rel="stylesheet" href="/css/style.css?v=history-replay-20260822-1">
 </head>
 
 <body class="theme-guofeng">
@@ -64,6 +64,8 @@
         <button class="btn-ghost btn-mute" type="button" @click="toggleMute"
           :title="muted ? '开启音效' : '静音'">{{muted ? '♪ 静音' : '♪ 音效'}}</button>
         <button class="btn-ghost" type="button" @click="openStats">我的战绩</button>
+        <button class="btn-ghost" type="button" @click="openHistory">历史战局</button>
+        <button class="btn-ghost" type="button" @click="openSiteStats">数据统计</button>
         <button class="btn-ghost" type="button" @click="openRules">玩法规则</button>
         <button @click="quickJoin">快速入局</button>
       </div>
@@ -634,6 +636,7 @@
           loginError: '',//登录错误持久横幅
           debugMode: /[?&]debug=1\b/.test(location.search),//?debug=1 显示调试信息
           tokenSnippet: '',//最近一次握手用的 token 前后段（仅在 debug 显示）
+          guestId: '',//访客稳定身份，用于访问自己参与过的私密房复盘
           // 跨域 SSO 桥接入口：论坛域名上的 bridge.php
           discuzLoginUrl: 'https://zwwx.club/discuz-sso/bridge.php',
           // 我的战绩
@@ -738,6 +741,14 @@
       mounted: function () {
         var self = this;
         this.$nextTick(function () {
+          try {
+            var savedGuestId = localStorage.getItem('cardroom_guest_id');
+            if (!savedGuestId) {
+              savedGuestId = 'guest-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+              localStorage.setItem('cardroom_guest_id', savedGuestId);
+            }
+            this.guestId = savedGuestId;
+          } catch (e) {}
           document.oncontextmenu = function (e) {
             e.preventDefault();
             self.playCards();
@@ -1430,6 +1441,146 @@
           render();
           loadData();
         },
+        historyViewerQuery: function () {
+          var params = [];
+          var token = _getDiscuzToken();
+          var username = (this.myUser && this.myUser.username) || (!this.myUser ? this.posState.self.name : '');
+          if (token) params.push('token=' + encodeURIComponent(token));
+          if (username) params.push('username=' + encodeURIComponent(username));
+          if (this.guestId) params.push('guestId=' + encodeURIComponent(this.guestId));
+          return params.join('&');
+        },
+        historyCardText: function (card, gameType) {
+          if (!card) return '';
+          var value = Number(card.value);
+          if (gameType === 'mahjong') {
+            var mahjongLabels = ['一万', '二万', '三万', '四万', '五万', '六万', '七万', '八万', '九万', '一条', '二条', '三条', '四条', '五条', '六条', '七条', '八条', '九条', '一筒', '二筒', '三筒', '四筒', '五筒', '六筒', '七筒', '八筒', '九筒', '东', '南', '西', '北', '中', '发', '白'];
+            return mahjongLabels[value] || ('牌' + value);
+          }
+          var labels = { 11: 'J', 12: 'Q', 13: 'K', 14: 'A', 15: '2', 16: '小王', 17: '大王' };
+          var suits = ['♠', '♥', '♣', '♦'];
+          return (labels[value] || String(value)) + (value >= 16 ? '' : (suits[Number(card.type) || 0] || ''));
+        },
+        historyMoveText: function (move, record) {
+          var player = (record.players || []).find(function (item) { return Number(item.posId) === Number(move.posId); });
+          var name = (player && player.username) || ('玩家' + (Number(move.posId) + 1));
+          var source = move.source === 'ai' ? ' · AI' : '';
+          if (move.type === 'call') return name + ' 叫分 ' + Number(move.score || 0) + ' 分' + source;
+          if (move.type === 'play') {
+            var cards = (move.cards || []).map(function (card) { return this.historyCardText(card, record.gameType); }.bind(this)).join(' ');
+            return name + (move.pass ? ' 不出' : ' 出牌 ' + (cards || '—')) + source;
+          }
+          var actionLabels = { discard: '出牌', chi: '吃', peng: '碰', gang: '杠', angang: '暗杠', hu: '胡', pass: '过' };
+          var action = actionLabels[move.action] || move.action || '操作';
+          var cardText = move.card ? ' ' + this.historyCardText(move.card, record.gameType) : '';
+          return name + ' ' + action + cardText + source;
+        },
+        openHistory: function () {
+          var self = this;
+          var esc = this.htmlEscape;
+          var panelHtml = '<div id="history-panel" class="history-panel">' +
+            '<div class="history-hero"><div><span class="history-eyebrow">雀阁 · 战局档案</span><h2>历史战局</h2><p>公开房所有人可查看；私密房仅本局参与者可复盘。</p></div><button type="button" class="lb-refresh" id="history-refresh">↻ 刷新</button></div>' +
+            '<div class="history-filter"><button type="button" class="history-filter-btn active" data-game="all">全部</button><button type="button" class="history-filter-btn" data-game="doudizhu">斗地主</button><button type="button" class="history-filter-btn" data-game="guandan">掼蛋</button><button type="button" class="history-filter-btn" data-game="mahjong">麻将</button></div>' +
+            '<div id="history-list" class="history-list"><div class="stats-loading">战局加载中...</div></div>' +
+            '</div>';
+          var idx = layer.open({ type: 1, title: '历史战局', shadeClose: true, area: 'auto', content: panelHtml });
+          var panel = document.getElementById('history-panel');
+          var list = document.getElementById('history-list');
+          var activeGame = 'all';
+          var loading = false;
+          var query = function (extra) {
+            var base = self.historyViewerQuery();
+            return (base ? base + '&' : '') + (extra || '');
+          };
+          var formatTime = function (stamp) {
+            if (!stamp) return '时间未知';
+            try { return new Date(Number(stamp)).toLocaleString('zh-CN', { hour12: false }); } catch (e) { return '时间未知'; }
+          };
+          var playerNames = function (record, ids) {
+            return (ids || []).map(function (pid) {
+              var p = (record.players || []).find(function (item) { return Number(item.posId) === Number(pid); });
+              return p ? p.username : ('玩家' + (Number(pid) + 1));
+            }).join('、');
+          };
+          var resultText = function (record) {
+            if (record.result && record.result.draw) return '流局';
+            var names = playerNames(record, record.result && record.result.winner);
+            return names ? '胜者：' + names : '已完成';
+          };
+          var renderList = function (data) {
+            var items = (data && data.items) || [];
+            if (!items.length) {
+              list.innerHTML = '<div class="history-empty"><span>◌</span><b>暂无可查看的历史战局</b><small>完成一局游戏后，复盘记录会出现在这里。</small></div>';
+              return;
+            }
+            list.innerHTML = items.map(function (item) {
+              var privacy = item.isPrivate ? '<em class="history-private">私密</em>' : '<em class="history-public">公开</em>';
+              var players = (item.players || []).map(function (p) { return esc(p.username || '玩家'); }).join(' · ');
+              return '<article class="history-item"><div class="history-item-main"><div class="history-item-title"><strong>' + esc(item.gameLabel || self.gameTypeName(item.gameType)) + '</strong>' + privacy + '<span>#' + esc(item.roomCode || item.deskId) + '</span></div><div class="history-item-meta"><span>' + esc(formatTime(item.endedAt)) + '</span><span>' + esc(resultText(item)) + '</span><span>' + Number(item.moveCount || 0) + ' 手</span></div><small>' + players + '</small></div><button type="button" class="history-view-btn" data-history-id="' + Number(item.id) + '">查看复盘</button></article>';
+            }).join('');
+            list.querySelectorAll('[data-history-id]').forEach(function (button) {
+              button.onclick = function () { openDetail(Number(button.getAttribute('data-history-id'))); };
+            });
+          };
+          var renderDetail = function (record) {
+            var moves = record.moves || [];
+            var current = 0;
+            var timer = null;
+            panel.innerHTML = '<div class="history-hero"><div><span class="history-eyebrow">' + esc(record.isPrivate ? '私密房 · 参与者可见' : '公开房 · 全员可见') + '</span><h2>' + esc(record.gameLabel || self.gameTypeName(record.gameType)) + '复盘</h2><p>#' + esc(record.roomCode || record.deskId) + ' · ' + esc(formatTime(record.endedAt)) + '</p></div><button type="button" class="lb-refresh" id="history-back">← 返回</button></div>' +
+              '<div class="replay-players">' + (record.players || []).map(function (p) { return '<span class="replay-player' + (p.isBot ? ' is-bot' : '') + '">' + esc(p.username || '玩家') + (p.isBot ? ' · AI' : '') + '</span>'; }).join('') + '</div>' +
+              '<div id="replay-stage" class="replay-stage"></div><div class="replay-controls"><button type="button" id="replay-prev">上一手</button><input id="replay-range" type="range" min="0" max="' + moves.length + '" value="0"><button type="button" id="replay-next">下一手</button><button type="button" id="replay-auto">自动播放</button></div><div id="replay-timeline" class="replay-timeline"></div><div class="replay-result"><b>结果</b><span>' + esc(resultText(record)) + '</span></div>';
+            var stage = document.getElementById('replay-stage');
+            var timeline = document.getElementById('replay-timeline');
+            var range = document.getElementById('replay-range');
+            var renderStep = function () {
+              var last = current > 0 ? moves[current - 1] : null;
+              stage.innerHTML = '<span class="replay-count">第 ' + current + ' / ' + moves.length + ' 手</span><strong>' + esc(last ? self.historyMoveText(last, record) : '点击下一手开始复盘') + '</strong><small>' + (last ? esc(formatTime(last.at)) : '按顺序查看叫分、出牌和麻将操作') + '</small>';
+              range.value = current;
+              timeline.innerHTML = moves.map(function (move, index) { return '<button type="button" class="replay-step' + (index < current ? ' done' : '') + (index === current - 1 ? ' active' : '') + '" data-step="' + (index + 1) + '">' + (index + 1) + '<span>' + esc(self.historyMoveText(move, record)) + '</span></button>'; }).join('');
+              timeline.querySelectorAll('[data-step]').forEach(function (button) { button.onclick = function () { current = Number(button.getAttribute('data-step')); renderStep(); }; });
+            };
+            var stopAuto = function () { if (timer) { clearInterval(timer); timer = null; } var auto = document.getElementById('replay-auto'); if (auto) auto.textContent = '自动播放'; };
+            document.getElementById('history-back').onclick = function () { stopAuto(); var content = panel.parentNode; content.innerHTML = panelHtml; panel = document.getElementById('history-panel'); list = document.getElementById('history-list'); bindList(); loadList(); };
+            document.getElementById('replay-prev').onclick = function () { current = Math.max(0, current - 1); renderStep(); };
+            document.getElementById('replay-next').onclick = function () { current = Math.min(moves.length, current + 1); renderStep(); };
+            range.oninput = function () { current = Number(range.value); renderStep(); };
+            document.getElementById('replay-auto').onclick = function () { if (timer) { stopAuto(); return; } var auto = document.getElementById('replay-auto'); auto.textContent = '暂停'; timer = setInterval(function () { if (current >= moves.length) { stopAuto(); return; } current++; renderStep(); }, 1200); };
+            renderStep();
+          };
+          var openDetail = function (id) {
+            list.innerHTML = '<div class="stats-loading">复盘加载中...</div>';
+            fetch('/api/history/' + encodeURIComponent(id) + '?' + query()).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderDetail).catch(function () { list.innerHTML = '<div class="history-empty"><b>这局复盘不可见或已不存在</b><small>私密房只能由实际参与者查看。</small></div>'; });
+          };
+          var bindList = function () {
+            if (!panel) return;
+            list = document.getElementById('history-list');
+            panel.querySelectorAll('.history-filter-btn').forEach(function (button) { button.onclick = function () { activeGame = button.getAttribute('data-game') || 'all'; panel.querySelectorAll('.history-filter-btn').forEach(function (item) { item.classList.toggle('active', item === button); }); loadList(); }; });
+            var refresh = document.getElementById('history-refresh');
+            if (refresh) refresh.onclick = loadList;
+          };
+          var loadList = function () {
+            if (loading) return;
+            loading = true;
+            if (list) list.innerHTML = '<div class="stats-loading">战局加载中...</div>';
+            fetch('/api/history?limit=30&gameType=' + encodeURIComponent(activeGame) + '&' + query()).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderList).catch(function () { if (list) list.innerHTML = '<div class="history-empty"><b>历史战局加载失败</b><small>请稍后刷新重试。</small></div>'; }).finally(function () { loading = false; });
+          };
+          bindList();
+          loadList();
+        },
+        openSiteStats: function () {
+          var esc = this.htmlEscape;
+          var html = '<div id="site-stats-panel" class="site-stats-panel"><div class="history-hero"><div><span class="history-eyebrow">雀阁 · 运营数据</span><h2>数据统计</h2><p>累计访问、开局、游玩人次与观战数据。</p></div><button type="button" class="lb-refresh" id="site-stats-refresh">↻ 刷新</button></div><div id="site-stats-grid" class="site-stats-grid"><div class="stats-loading">数据加载中...</div></div></div>';
+          var idx = layer.open({ type: 1, title: '数据统计', shadeClose: true, area: 'auto', content: html });
+          var grid = document.getElementById('site-stats-grid');
+          var render = function (data) {
+            data = data || {};
+            var cards = [{ key: 'games', label: '完成战局', icon: '局' }, { key: 'visits', label: '页面访问', icon: '访' }, { key: 'plays', label: '游玩人次', icon: '玩' }, { key: 'game_starts', label: '开局次数', icon: '开' }, { key: 'socket_connections', label: '连接次数', icon: '连' }, { key: 'spectator_visits', label: '观战次数', icon: '观' }];
+            grid.innerHTML = cards.map(function (card) { return '<article class="site-stat-card"><i>' + card.icon + '</i><strong>' + Number(data[card.key] || 0).toLocaleString() + '</strong><span>' + esc(card.label) + '</span></article>'; }).join('');
+          };
+          var load = function () { grid.innerHTML = '<div class="stats-loading">数据加载中...</div>'; fetch('/api/site-stats').then(function (r) { return r.ok ? r.json() : {}; }).then(render).catch(function () { render({}); }); };
+          document.getElementById('site-stats-refresh').onclick = load;
+          load();
+        },
         goDiscuzLogin: function () {
           // 跨域桥接：论坛登录 → 生成 JWT → 302 回本页并带 #token=xxx
           var back = location.protocol + '//' + location.host + '/';
@@ -1458,7 +1609,7 @@
             return layer.msg('名字不超过10个字');
           }
           layer.load({ type: 3 });
-          this.client.emit('LOGIN', this.posState.self.name);
+          this.client.emit('LOGIN', { userName: this.posState.self.name, guestId: this.guestId });
         },
         gameDescription: function (gameType) {
           if (gameType === 'guandan') return '四人两副牌，队友协作升级，适合一桌慢慢磨出默契。';
