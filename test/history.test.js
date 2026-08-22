@@ -43,6 +43,15 @@ const db = require('../db');
   await db.recordSiteStat('page_views', 2);
   const stats = await db.getSiteStats();
   assert.strictEqual(stats.visits, 2);
+  await db.backfillSiteStats({
+    values: { games_completed: 411, game_starts: 411, player_rounds: 777 },
+    dataQuality: { recoveredAt: 123, metrics: { games_completed: { mode: 'estimated' } } },
+    force: true,
+  });
+  const restored = await db.getSiteStats();
+  assert.strictEqual(restored.games, 411);
+  assert.strictEqual(restored.plays, 777);
+  assert.strictEqual(restored.dataQuality.metrics.games_completed.mode, 'estimated');
   console.log('History privacy and site stats tests passed.');
 })().catch(err => {
   console.error(err);

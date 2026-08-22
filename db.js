@@ -22,6 +22,7 @@ const TABLES = {
 const TABLE = TABLES.doudizhu;
 const HISTORY_TABLE = `${TABLE_PREFIX}game_history`;
 const SITE_STATS_TABLE = `${TABLE_PREFIX}site_stats`;
+const SITE_STATS_META_TABLE = `${TABLE_PREFIX}site_stats_meta`;
 const STAT_COLUMNS = ['page_views', 'socket_connections', 'game_starts', 'games_completed', 'player_rounds', 'spectator_visits'];
 const memoryHistory = [];
 const memoryStats = {
@@ -33,6 +34,7 @@ const memoryStats = {
   spectator_visits: 0,
 };
 let memoryHistorySeq = 1;
+let memoryStatsMeta = null;
 
 let pool = null;
 let ready = false;
@@ -106,6 +108,14 @@ async function init() {
         \`games_completed\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
         \`player_rounds\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
         \`spectator_visits\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        \`updated_at\` BIGINT UNSIGNED NOT NULL DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`${SITE_STATS_META_TABLE}\` (
+        \`id\` TINYINT UNSIGNED NOT NULL PRIMARY KEY,
+        \`version\` INT UNSIGNED NOT NULL DEFAULT 0,
+        \`data_quality_json\` MEDIUMTEXT NOT NULL,
         \`updated_at\` BIGINT UNSIGNED NOT NULL DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
@@ -346,6 +356,15 @@ function statPayload(row) {
   return result;
 }
 
+function attachStatsMeta(result, meta) {
+  if (!meta) return result;
+  const parsed = typeof meta === 'string' ? safeJson(meta, null) : meta;
+  if (!parsed || typeof parsed !== 'object') return result;
+  result.dataQuality = parsed;
+  result.backfilledAt = Number(parsed.recoveredAt || 0);
+  return result;
+}
+
 async function recordSiteStat(name, amount = 1) {
   if (!STAT_COLUMNS.includes(name)) return;
   const delta = Math.max(0, Math.floor(Number(amount) || 0));
@@ -368,16 +387,120 @@ async function getSiteStats() {
   if (isReady()) {
     try {
       const [rows] = await pool.query(`SELECT * FROM \`${SITE_STATS_TABLE}\` WHERE id = 1 LIMIT 1`);
-      if (rows[0]) return statPayload(rows[0]);
+      const [metaRows] = await pool.query(`SELECT data_quality_json FROM \`${SITE_STATS_META_TABLE}\` WHERE id = 1 LIMIT 1`);
+      return attachStatsMeta(statPayload(rows[0] || {}), metaRows[0] && metaRows[0].data_quality_json);
     } catch (err) {
       console.error('[db] getSiteStats 失败：', err && err.message);
     }
   }
-  return statPayload(memoryStats);
+  return attachStatsMeta(statPayload(memoryStats), memoryStatsMeta);
+}
+
+/**
+ * 从旧积分表恢复可推导的历史数据。
+ * games 是按玩家累计的，无法还原每一局的牌序，所以 completedEstimate 使用
+ * “单个玩家最大局数”和“玩家局数/座位数”的较大值作为保守估算，并保留来源说明。
+ */
+async function getHistoricalGameStats() {
+  const seatsByType = { doudizhu: 3, guandan: 4, mahjong: 4 };
+  const result = [];
+  for (const [gameType, tableName] of Object.entries(TABLES)) {
+    const item = {
+      gameType,
+      table: tableName,
+      trackedPlayers: 0,
+      playerRounds: 0,
+      maxPlayerGames: 0,
+      wins: 0,
+      losses: 0,
+      completedEstimate: 0,
+      formula: `max(maxPlayerGames, ceil(playerRounds/${seatsByType[gameType]}))`,
+    };
+    if (!isReady()) {
+      result.push(item);
+      continue;
+    }
+    try {
+      const [rows] = await pool.query(`
+        SELECT COUNT(*) AS tracked_players,
+               COALESCE(SUM(games), 0) AS player_rounds,
+               COALESCE(MAX(games), 0) AS max_player_games,
+               COALESCE(SUM(wins), 0) AS wins,
+               COALESCE(SUM(losses), 0) AS losses
+        FROM \`${tableName}\`
+      `);
+      const row = rows[0] || {};
+      item.trackedPlayers = Number(row.tracked_players || 0);
+      item.playerRounds = Number(row.player_rounds || 0);
+      item.maxPlayerGames = Number(row.max_player_games || 0);
+      item.wins = Number(row.wins || 0);
+      item.losses = Number(row.losses || 0);
+      item.completedEstimate = Math.max(item.maxPlayerGames, Math.ceil(item.playerRounds / seatsByType[gameType]));
+    } catch (err) {
+      console.error('[db] getHistoricalGameStats 失败：', err && err.message);
+    }
+    result.push(item);
+  }
+  return result;
+}
+
+/**
+ * 一次性把外部日志/旧积分表推导出的历史基线写入数据库。
+ * 使用 GREATEST 合并，重复执行不会把数据重复累加；force=true 才会刷新来源元数据。
+ */
+async function backfillSiteStats(payload = {}) {
+  const values = payload.values || {};
+  const metadata = Object.assign({}, payload.dataQuality || payload.metadata || {}, {
+    recoveredAt: Number((payload.dataQuality || payload.metadata || {}).recoveredAt || Date.now()),
+  });
+  if (!isReady()) {
+    STAT_COLUMNS.forEach(key => {
+      memoryStats[key] = Math.max(memoryStats[key], Math.max(0, Math.floor(Number(values[key]) || 0)));
+    });
+    memoryStatsMeta = metadata;
+    return attachStatsMeta(statPayload(memoryStats), memoryStatsMeta);
+  }
+  try {
+    const [metaRows] = await pool.query(`SELECT version, data_quality_json FROM \`${SITE_STATS_META_TABLE}\` WHERE id = 1 LIMIT 1`);
+    if (!payload.force && metaRows[0] && Number(metaRows[0].version || 0) >= 1) {
+      return getSiteStats();
+    }
+    const [currentRows] = await pool.query(`SELECT * FROM \`${SITE_STATS_TABLE}\` WHERE id = 1 LIMIT 1`);
+    const current = currentRows[0] || {};
+    const merged = {};
+    STAT_COLUMNS.forEach(key => {
+      merged[key] = Math.max(Number(current[key] || 0), Math.max(0, Math.floor(Number(values[key]) || 0)));
+    });
+    const now = Math.floor(Date.now() / 1000);
+    await pool.query(`
+      INSERT INTO \`${SITE_STATS_TABLE}\`
+        (id, page_views, socket_connections, game_starts, games_completed, player_rounds, spectator_visits, updated_at)
+      VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        page_views = VALUES(page_views),
+        socket_connections = VALUES(socket_connections),
+        game_starts = VALUES(game_starts),
+        games_completed = VALUES(games_completed),
+        player_rounds = VALUES(player_rounds),
+        spectator_visits = VALUES(spectator_visits),
+        updated_at = VALUES(updated_at)
+    `, [merged.page_views, merged.socket_connections, merged.game_starts, merged.games_completed,
+      merged.player_rounds, merged.spectator_visits, now]);
+    await pool.query(`
+      INSERT INTO \`${SITE_STATS_META_TABLE}\` (id, version, data_quality_json, updated_at)
+      VALUES (1, 1, ?, ?)
+      ON DUPLICATE KEY UPDATE version = VALUES(version), data_quality_json = VALUES(data_quality_json), updated_at = VALUES(updated_at)
+    `, [JSON.stringify(Object.assign(metadata, { effectiveValues: merged })), now]);
+    return attachStatsMeta(statPayload(merged), Object.assign(metadata, { effectiveValues: merged }));
+  } catch (err) {
+    console.error('[db] backfillSiteStats 失败：', err && err.message);
+    return getSiteStats();
+  }
 }
 
 module.exports = {
   init, isReady, recordPlayer, getUserScore, getTopScores,
   saveHistory, listHistory, getHistory, recordSiteStat, getSiteStats,
-  TABLE, TABLES, HISTORY_TABLE, SITE_STATS_TABLE,
+  getHistoricalGameStats, backfillSiteStats,
+  TABLE, TABLES, HISTORY_TABLE, SITE_STATS_TABLE, SITE_STATS_META_TABLE,
 };
