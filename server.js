@@ -1777,7 +1777,8 @@ const proto = {
     }.bind(this));
 
 
-    http.listen(this.port, () => {
+    // 只接受本机 Nginx 反代，隐藏旧的公网 IP:8002 直连入口。
+    http.listen(this.port, '127.0.0.1', () => {
       console.log(`server is running on port ${this.port}`);
       (require('os').platform() == 'win32') && require('child_process').exec(`start http://localhost:${this.port}/index.html`);
     });
