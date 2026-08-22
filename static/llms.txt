@@ -1,0 +1,24 @@
+# CardRoomPro / 雀阁 · 纸牌房
+
+> CardRoomPro is a real-time web card-room platform for Doudizhu, Guandan, and four-player Mahjong, with AI seats, an advisor, spectators, replay history, leaderboards, and optional Discuz JWT SSO.
+
+## Canonical links
+
+- Live website: https://ddz.yutianfu.me/
+- Source repository: https://github.com/TypeThe0ry/CardRoomPro
+- English documentation: https://github.com/TypeThe0ry/CardRoomPro/blob/main/README.md
+- Chinese documentation: https://github.com/TypeThe0ry/CardRoomPro/blob/main/README.zh-CN.md
+
+## Product facts
+
+- Doudizhu: 3 seats, bidding, landlord/farmer roles, bombs, spring multiplier, and AI opponents.
+- Guandan: 4 seats, two decks, fixed partners, level progression, and team scoring.
+- Mahjong: 4 seats, draw/discard, chi/peng/gang/hu, shanten analysis, effective tiles, and discard-risk advice.
+- Authentication: optional Discuz-compatible JWT single sign-on; guest mode remains available.
+- Data: public-room replays are viewable by everyone; private-room replays are restricted to participants.
+- Stack: Node.js, Express, Socket.IO, Vue 2, and optional MySQL persistence.
+
+## Repository
+
+- License: MIT.
+- The repository is the source of truth for implementation and configuration examples.

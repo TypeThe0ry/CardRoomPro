@@ -29,8 +29,10 @@ if (file_exists(__DIR__ . '/vendor/autoload.php')) {
 
 use Firebase\JWT\JWT;
 
-// 获取 secret：优先使用常量 DISCUZ_SSO_SECRET，其次 ENV，最后默认（仅开发用）
-$SSO_SECRET = defined('DISCUZ_SSO_SECRET') ? DISCUZ_SSO_SECRET : (getenv('JWT_SECRET') ?: 'change_this_in_production');
+// 获取 secret：生产环境没有配置时直接停用，不再使用可猜测的占位密钥。
+$SSO_SECRET = defined('DISCUZ_SSO_SECRET') ? DISCUZ_SSO_SECRET : (getenv('JWT_SECRET') ?: '');
+$SSO_ISSUER = getenv('JWT_ISSUER') ?: 'zwwx.club';
+$SSO_AUDIENCE = getenv('JWT_AUDIENCE') ?: 'ddz.yutianfu.me';
 
 /**
  * 设置 JWT cookie
@@ -39,14 +41,18 @@ $SSO_SECRET = defined('DISCUZ_SSO_SECRET') ? DISCUZ_SSO_SECRET : (getenv('JWT_SE
  * @param int $ttl 秒，默认 24 小时
  */
 function doudizhu_set_jwt_cookie($uid, $username, $ttl = 86400) {
-    global $SSO_SECRET;
-    if (!$uid || !$username) return false;
+    global $SSO_SECRET, $SSO_ISSUER, $SSO_AUDIENCE;
+    if (!$uid || !$username || !$SSO_SECRET) return false;
     $issuedAt = time();
     $expire = $issuedAt + intval($ttl);
     $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
     $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
     $avatarUrl = $host ? ($scheme . '://' . $host . '/uc_server/avatar.php?uid=' . rawurlencode((string)$uid) . '&size=middle') : '';
     $payload = [
+        'iss' => $SSO_ISSUER,
+        'aud' => $SSO_AUDIENCE,
+        'sub' => (string)$uid,
+        'jti' => function_exists('random_bytes') ? bin2hex(random_bytes(16)) : sha1(uniqid('', true)),
         'uid' => intval($uid),
         'username' => strval($username),
         'avatarUrl' => $avatarUrl,

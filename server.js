@@ -92,6 +92,21 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+function jwtVerifyOptions() {
+  const options = { algorithms: ['HS256'] };
+  const issuer = String(process.env.JWT_ISSUER || '').trim();
+  const audience = String(process.env.JWT_AUDIENCE || '').trim();
+  if (issuer) options.issuer = issuer;
+  if (audience) options.audience = audience;
+  return options;
+}
+
+function verifySsoToken(token) {
+  if (!token) throw new Error('missing token');
+  const jwt = require('jsonwebtoken');
+  return jwt.verify(token, proto.JWT_SECRET, jwtVerifyOptions());
+}
+
 // 2) /api/* 简单速率限制（按 IP，每 10 秒 30 次），抵御暴力探测/扫表。
 const __apiHits = new Map();
 app.use('/api', (req, res, next) => {
@@ -120,8 +135,7 @@ app.get('/api/score/me', (req, res) => {
   const gameType = normalizeGameType(req.query.gameType);
   if (!token) return res.status(401).json({ error: 'no token' });
   try {
-    const jwt = require('jsonwebtoken');
-    const payload = jwt.verify(token, proto.JWT_SECRET);
+    const payload = verifySsoToken(token);
     db.getUserScore(payload.uid, gameType).then(row => res.json(Object.assign({ gameType }, row || {}))).catch(() => res.status(500).json({ error: 'db_error' }));
   } catch (e) {
     return res.status(401).json({ error: 'invalid token' });
@@ -144,8 +158,7 @@ function historyViewerFromRequest(req) {
   const token = req.query.token || (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (token) {
     try {
-      const jwt = require('jsonwebtoken');
-      const payload = jwt.verify(token, proto.JWT_SECRET);
+      const payload = verifySsoToken(token);
       if (payload && payload.uid) {
         viewer.uid = String(payload.uid);
         viewer.username = String(payload.username || viewer.username || '').slice(0, 64);
@@ -190,6 +203,9 @@ app.get('/api/sso/health', (req, res) => {
     length: s.length,
     fingerprint: fp,
     source: process.env.JWT_SECRET ? 'env' : (require('fs').existsSync(require('path').join(__dirname, 'sso-secret.txt')) ? 'file' : 'default'),
+    issuerConfigured: !!String(process.env.JWT_ISSUER || '').trim(),
+    audienceConfigured: !!String(process.env.JWT_AUDIENCE || '').trim(),
+    queryTokenAccepted: process.env.ALLOW_QUERY_TOKEN === '1' || process.env.ALLOW_QUERY_TOKEN === 'true',
     warning: isDefault ? 'JWT_SECRET 未配置，使用占位串' : null
   });
 });
@@ -1225,7 +1241,10 @@ const proto = {
 
     // socket.io middleware: verify JWT token if provided during handshake
     io.use((socket, next) => {
-      const token = (socket.handshake && (socket.handshake.auth && socket.handshake.auth.token)) || (socket.handshake && socket.handshake.query && socket.handshake.query.token);
+      const authToken = socket.handshake && socket.handshake.auth && socket.handshake.auth.token;
+      const queryToken = socket.handshake && socket.handshake.query && socket.handshake.query.token;
+      const allowQueryToken = process.env.ALLOW_QUERY_TOKEN === '1' || process.env.ALLOW_QUERY_TOKEN === 'true';
+      const token = authToken || (allowQueryToken ? queryToken : '');
       if (!token) return next();
       let jwt;
       try { jwt = require('jsonwebtoken'); }
@@ -1234,7 +1253,7 @@ const proto = {
         return next();
       }
       try {
-        const payload = jwt.verify(token, this.JWT_SECRET);
+        const payload = jwt.verify(token, this.JWT_SECRET, jwtVerifyOptions());
         if (!payload || !payload.uid) {
           socket.tokenError = 'token 缺少 uid';
         } else {

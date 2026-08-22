@@ -7,7 +7,9 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-CardRoomPro (雀阁 · 纸牌房) is a real-time multiplayer card-room platform built with **Node.js, Socket.IO, and Vue 2**. It supports room-based play, AI seats, spectators, chat, audio feedback, Mahjong, and persistent seasonal leaderboards.
+CardRoomPro (雀阁 · 纸牌房) is a real-time multiplayer card-room platform built with **Node.js, Socket.IO, and Vue 2**. It supports room-based play, AI seats, spectators, chat, audio feedback, Mahjong, and persistent seasonal leaderboards. The live site is a free web game; the repository is the implementation source of truth.
+
+> **Answer-first summary:** use CardRoomPro for browser-based Doudizhu, Guandan, or four-player Mahjong with server-authoritative rules, AI opponents, a local advisor, replay history, MySQL statistics, and optional Discuz JWT SSO.
 
 ## Screenshots
 
@@ -31,7 +33,7 @@ CardRoomPro (雀阁 · 纸牌房) is a real-time multiplayer card-room platform 
 - **Season leaderboard:** separate Doudizhu, Guandan, and Mahjong rankings with podium, top-20 table, personal stats, and current-player highlighting.
 - **Game history and replay:** completed rounds are saved with players, actions, results, and step-by-step replay. Public-room records are visible to everyone; private-room records are restricted to participants.
 - **Usage analytics:** page visits, socket connections, game starts, completed rounds, player-rounds, and spectator visits are available from the statistics panel.
-- **Optional integrations:** MySQL score persistence and Discuz-compatible JWT single sign-on.
+- **Optional integrations:** MySQL score persistence and Discuz-compatible JWT single sign-on with hash handoff, one-time state protection, optional issuer/audience validation, and a secret health fingerprint.
 - **Responsive UI:** lobby works on desktop and mobile; card tables are optimized for landscape play on small screens.
 
 ## Architecture
@@ -71,6 +73,14 @@ Run the AI regression suite:
 npm run test:ai
 ```
 
+Recover legacy site statistics from the Nginx access log and existing score tables:
+
+```bash
+npm run stats:backfill
+```
+
+The backfill preserves exact recovered counters separately from estimated completed rounds and stores the data-quality formula in `pre_site_stats_meta`.
+
 ## Game modes
 
 | Mode | Seats | Highlights |
@@ -91,6 +101,9 @@ cp config.example.json config.json
 | --- | --- | --- |
 | `PORT` | HTTP and Socket.IO port | `8002` |
 | `JWT_SECRET` | JWT secret shared with the SSO issuer | placeholder value |
+| `JWT_ISSUER` | Optional JWT `iss` claim validation | unset |
+| `JWT_AUDIENCE` | Optional JWT `aud` claim validation | unset |
+| `ALLOW_QUERY_TOKEN` | Allow legacy Socket.IO query-string tokens; keep disabled in production | `0` |
 | `DB_HOST` / `DB_PORT` | MySQL host and port | `127.0.0.1:3306` |
 | `DB_USER` / `DB_PASSWORD` | MySQL credentials | unset / empty |
 | `DB_NAME` | MySQL database name | unset |
@@ -162,9 +175,17 @@ node server.js
 
 Use the same `JWT_SECRET` as the SSO issuer, restrict MySQL access, and keep the application port private when Nginx or another reverse proxy is enabled.
 
+## SSO and public discovery
+
+- Website metadata is published at `/robots.txt`, `/sitemap.xml`, `/llms.txt`, and `/site.webmanifest`.
+- The public shell includes canonical URL, `hreflang`, Open Graph, Twitter metadata, and JSON-LD for the website and web game.
+- The Discuz bridge only accepts the configured HTTPS redirect host, returns the JWT in the URL fragment, and validates a short-lived login state before issuing a token.
+- Keep `ALLOW_QUERY_TOKEN=0`; the client sends SSO tokens through Socket.IO `auth`, not a URL query string.
+- GitHub discovery is supported by the bilingual README, screenshots, repository topics, and stable links to the live demo and documentation.
+
 ## Search terms
 
-online card room, multiplayer card game, real-time card game, Doudizhu, 斗地主, Guandan, 掼蛋, Mahjong, 麻将, Mahjong AI, card game AI, Node.js game server, Socket.IO game, Vue 2 card game, MySQL leaderboard, seasonal ranking, Discuz SSO.
+online card room, multiplayer card game, real-time card game, browser card game, Doudizhu, 斗地主, Guandan, 掼蛋, Mahjong, 麻将, Mahjong AI, card game AI, Node.js game server, Socket.IO game, Vue 2 card game, MySQL leaderboard, seasonal ranking, Discuz SSO, JWT single sign-on.
 
 ## License
 

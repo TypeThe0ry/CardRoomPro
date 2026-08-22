@@ -25,6 +25,7 @@ https://game.example.com/#token=<JWT>
 - 已有可运行的 Discuz 站点。
 - Discuz 站点已安装 PHP JWT 依赖。
 - 游戏服务端和 Discuz 端使用同一个强随机 JWT 密钥。
+- 生产环境建议同时配置一致的 `JWT_ISSUER` 与 `JWT_AUDIENCE`，启用签发方和受众校验。
 - 游戏服务端可访问用于保存积分的 MySQL 数据库。
 - 生产环境建议全程 HTTPS。
 
@@ -63,6 +64,8 @@ Node 端可以通过环境变量或 `config.json` 配置：
 
 ```bash
 export JWT_SECRET='replace-with-a-strong-random-secret'
+export JWT_ISSUER='zwwx.club'
+export JWT_AUDIENCE='ddz.yutianfu.me'
 ```
 
 也可以在项目根目录创建 `sso-secret.txt`，但生产环境更推荐环境变量或受控配置文件。
@@ -82,6 +85,8 @@ discuzLoginUrl: 'https://your-discuz-domain/discuz-sso/bridge.php'
 ```
 
 用户点击“使用 ZWWX.CLUB 账号登录”后，会跳转到该入口。`bridge.php` 会在登录成功后跳回当前游戏域名。
+
+`bridge.php` 会校验回跳域名、强制 HTTPS（开发环境可显式设置 `SSO_ALLOW_HTTP_REDIRECT=1`）、设置短时效 HttpOnly state cookie，并把 JWT 放在 URL fragment；前端收到后会清理地址栏，不把 token 留在可分享 URL 中。默认不要打开 `ALLOW_QUERY_TOKEN`。
 
 ## 健康检查
 

@@ -9,6 +9,14 @@ header('Pragma: no-cache');
 header('Expires: 0');
 
 use Firebase\JWT\JWT;
+
+function sso_random_hex($bytes = 16) {
+    try {
+        return bin2hex(random_bytes($bytes));
+    } catch (Exception $e) {
+        return bin2hex(openssl_random_pseudo_bytes($bytes));
+    }
+}
 /**
  * Discuz → Doudizhu 跨域 SSO 桥接
  *
@@ -36,8 +44,11 @@ $ALLOW_HOSTS = [
     'ddz.yutianfu.me',
     // 如果还有其它前端域名，加进来
 ];
+$SSO_ISSUER = getenv('JWT_ISSUER') ?: 'zwwx.club';
+$SSO_AUDIENCE = getenv('JWT_AUDIENCE') ?: 'ddz.yutianfu.me';
 // JWT 有效期（秒）—— 用 define 保护，避免 Discuz init 后变量被覆盖
-define('SSO_JWT_TTL', 86400);
+$ttl = intval(getenv('SSO_JWT_TTL') ?: 86400);
+define('SSO_JWT_TTL', max(300, min(86400, $ttl)));
 
 // ====== 先取 redirect 并校验（必须在 Discuz init 之前，Discuz 会对 $_GET 做 addslashes） ======
 $redirect = isset($_GET['redirect']) ? (string)$_GET['redirect'] : '';
@@ -47,15 +58,25 @@ if (!$redirect) {
     echo 'missing redirect';
     exit;
 }
+if (strlen($redirect) > 2048) {
+    http_response_code(400);
+    echo 'redirect too long';
+    exit;
+}
 $parts = parse_url($redirect);
 if (empty($parts['host']) || !in_array(strtolower($parts['host']), array_map('strtolower', $ALLOW_HOSTS), true)) {
     http_response_code(400);
     echo 'redirect host not allowed';
     exit;
 }
-if (!isset($parts['scheme']) || !in_array($parts['scheme'], ['http', 'https'], true)) {
+if (!isset($parts['scheme']) || !in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
     http_response_code(400);
     echo 'invalid scheme';
+    exit;
+}
+if (strtolower($parts['scheme']) !== 'https' && getenv('SSO_ALLOW_HTTP_REDIRECT') !== '1') {
+    http_response_code(400);
+    echo 'https redirect required';
     exit;
 }
 // 用 define 把 redirect 锁起来，Discuz init 不会动到常量
@@ -117,6 +138,13 @@ if (!$uid) {
     // 防循环：如果已经从登录页回来了还没拿到 uid，直接报错而不是再跳
     // 注意：参数名不能以 _a / __ 开头，会被 Discuz 的 _init_input 安全过滤 unset
     if (isset($_GET['ssoback'])) {
+        $returnedState = isset($_GET['state']) ? (string)$_GET['state'] : '';
+        $savedState = isset($_COOKIE['cardroom_sso_state']) ? (string)$_COOKIE['cardroom_sso_state'] : '';
+        if (!$returnedState || !$savedState || !hash_equals($savedState, $returnedState)) {
+            http_response_code(400);
+            echo 'invalid SSO state';
+            exit;
+        }
         http_response_code(500);
         echo 'SSO loop: Discuz login succeeded but $_G[uid] is still 0 in bridge.php. ';
         echo 'Likely cookie path/domain mismatch. ';
@@ -132,9 +160,11 @@ if (!$uid) {
         (isset($_SERVER['HTTP_X_FORWARDED_SSL']) && strtolower($_SERVER['HTTP_X_FORWARDED_SSL']) === 'on') ||
         (isset($_SERVER['HTTP_CF_VISITOR']) && strpos($_SERVER['HTTP_CF_VISITOR'], 'https') !== false)
     );
+    $state = sso_random_hex(16);
+    setcookie('cardroom_sso_state', $state, time() + 600, '/discuz-sso/', '', $isHttps, true);
     $self = ($isHttps ? 'https' : 'http')
         . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']
-        . (strpos($_SERVER['REQUEST_URI'], '?') === false ? '?' : '&') . 'ssoback=1';
+        . (strpos($_SERVER['REQUEST_URI'], '?') === false ? '?' : '&') . 'ssoback=1&state=' . rawurlencode($state);
     // 用站点根的绝对路径，避免落到 /discuz-sso/member.php
     $loginUrl = '/member.php?mod=logging&action=login&referer=' . rawurlencode($self);
     header('Location: ' . $loginUrl);
@@ -147,6 +177,10 @@ $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' :
 $host = $_SERVER['HTTP_HOST'] ?? 'zwwx.club';
 $avatar = $scheme . '://' . $host . '/uc_server/avatar.php?uid=' . rawurlencode((string)$uid) . '&size=middle';
 $payload = [
+    'iss'      => $SSO_ISSUER,
+    'aud'      => $SSO_AUDIENCE,
+    'sub'      => (string)$uid,
+    'jti'      => sso_random_hex(16),
     'uid'      => $uid,
     'username' => strval($_G['member']['username']),
     'avatarUrl' => $avatar,
@@ -154,6 +188,7 @@ $payload = [
     'exp'      => $now + SSO_JWT_TTL,
 ];
 $jwt = JWT::encode($payload, $SSO_SECRET, 'HS256');
+setcookie('cardroom_sso_state', '', time() - 3600, '/discuz-sso/', '', $scheme === 'https', true);
 
 // 把 token 放到 fragment，避免被中间日志记录到 query
 $redirect = SSO_REDIRECT;

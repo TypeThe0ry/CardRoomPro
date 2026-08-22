@@ -176,8 +176,13 @@ button.btn-ghost {
 .login-wrapper {
   background: var(--grad-login);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 0;
+  overflow-y: auto;
+  padding: 24px 0;
+  box-sizing: border-box;
 }
 .login-wrapper::before {
   /* 远山剪影 */
@@ -1961,6 +1966,15 @@ button.btn-ghost {
 .site-stats-breakdown div:first-of-type { border-top: 0; }
 .site-stats-breakdown b { color: var(--text-soft); }
 .site-stats-breakdown strong { color: var(--gold-100); font-family: var(--font-mono); font-weight: 600; }
+.public-discovery { width: min(720px, calc(100vw - 32px)); margin: 22px auto 0; padding: 18px 22px; color: var(--text-soft); text-align: center; border: 1px solid rgba(233,193,120,0.16); border-radius: 16px; background: linear-gradient(135deg, rgba(13,42,38,0.84), rgba(6,23,22,0.72)); box-shadow: 0 12px 32px rgba(0,0,0,0.18); }
+.public-discovery-kicker { color: var(--gold-300); font: 600 10px/1.2 var(--font-mono); letter-spacing: .16em; }
+.public-discovery h1 { margin: 8px 0 6px; color: var(--gold-100); font: 700 23px/1.25 var(--font-serif); letter-spacing: .08em; }
+.public-discovery p { margin: 0 auto; max-width: 620px; color: var(--text-mute); font-size: 12px; line-height: 1.7; }
+.public-discovery-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 7px; margin: 12px 0; }
+.public-discovery-tags span { padding: 4px 9px; color: var(--gold-200); border: 1px solid rgba(233,193,120,0.16); border-radius: 999px; font-size: 10px; }
+.public-discovery a { color: var(--gold-300); font-size: 12px; text-decoration: none; }
+.public-discovery a:hover { color: var(--gold-100); text-decoration: underline; }
+.public-discovery-noscript { width: min(720px, calc(100vw - 32px)); margin: 14px auto; color: var(--text-mute); text-align: center; font-size: 12px; }
 
 /* ---------- 房间内：本桌累计记分板 ---------- */
 .score-board {

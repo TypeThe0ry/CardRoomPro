@@ -2,7 +2,9 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-CardRoomPro（雀阁 · 纸牌房）是一个基于 **Node.js、Socket.IO 和 Vue 2** 的实时多人牌局平台，支持房间、AI 补位、观战、聊天、音效、麻将和赛季积分榜。
+CardRoomPro（雀阁 · 纸牌房）是一个基于 **Node.js、Socket.IO 和 Vue 2** 的实时多人牌局平台，支持房间、AI 补位、观战、聊天、音效、麻将和赛季积分榜。在线站点免费开放，GitHub 仓库是实现的权威来源。
+
+> **一句话说明：** 用 CardRoomPro 在浏览器里玩斗地主、掼蛋或四人麻将，获得服务端规则校验、AI 对手、智囊推荐、历史复盘、MySQL 数据统计和可选 Discuz JWT 单点登录。
 
 ## 截图
 
@@ -26,7 +28,7 @@ CardRoomPro（雀阁 · 纸牌房）是一个基于 **Node.js、Socket.IO 和 Vu
 - **赛季积分榜：** 斗地主、掼蛋、麻将分别统计，提供前三名、前 20 名、个人战绩和当前用户高亮。
 - **历史战局与复盘：** 保存已完成战局的玩家、操作、结果，支持逐手回放。公开房所有人可看，私密房仅参与者可看。
 - **数据统计：** 统计页面访问、Socket 连接、开局、完成战局、游玩人次和观战次数。
-- **可选集成：** MySQL 积分持久化、Discuz 兼容 JWT 单点登录。
+- **可选集成：** MySQL 积分持久化、Discuz 兼容 JWT 单点登录；支持 hash 回传、一次性 state 防串线、可选 issuer/audience 校验和密钥指纹健康检查。
 - **响应式界面：** 大厅支持移动端，牌桌针对手机横屏优化。
 
 ## 快速开始
@@ -55,6 +57,14 @@ node server.js
 npm run test:ai
 ```
 
+从 Nginx 访问日志和旧积分表恢复历史统计：
+
+```bash
+npm run stats:backfill
+```
+
+脚本会把可恢复计数与完成战局估算分开，并将来源和估算公式写入 `pre_site_stats_meta`，不会伪造旧牌序。
+
 ## 玩法
 
 | 玩法 | 人数 | 重点规则 |
@@ -77,6 +87,9 @@ cp config.example.json config.json
 | --- | --- | --- |
 | `PORT` | HTTP 和 Socket.IO 端口 | `8002` |
 | `JWT_SECRET` | 与登录签发端一致的 JWT 密钥 | 占位值 |
+| `JWT_ISSUER` | 可选，校验 JWT `iss` | 未配置 |
+| `JWT_AUDIENCE` | 可选，校验 JWT `aud` | 未配置 |
+| `ALLOW_QUERY_TOKEN` | 兼容旧版 Socket.IO URL token；生产保持关闭 | `0` |
 | `DB_HOST` / `DB_PORT` | MySQL 地址和端口 | `127.0.0.1:3306` |
 | `DB_USER` / `DB_PASSWORD` | MySQL 账号密码 | 未配置 / 空 |
 | `DB_NAME` | 数据库名 | 未配置 |
@@ -112,6 +125,14 @@ GET /api/site-stats
 ```
 
 历史战局权限由服务端校验：公开房无需登录，私密房必须使用本局参与者的 JWT 身份或客户端稳定访客身份。未配置 MySQL 时，历史和统计会暂存在当前进程内存中。
+
+## SSO 与 GEO/公开发现
+
+- 网站提供 `/robots.txt`、`/sitemap.xml`、`/llms.txt` 和 `/site.webmanifest`。
+- 首页公开壳包含 canonical、hreflang、Open Graph、Twitter 元数据，以及网站/网页游戏 JSON-LD 结构化数据。
+- Discuz 桥接只接受白名单 HTTPS 回跳域名，JWT 通过 URL fragment 回传，并在签发前校验短时效登录 state。
+- 生产保持 `ALLOW_QUERY_TOKEN=0`，SSO token 通过 Socket.IO `auth` 发送，不放进 URL 查询字符串。
+- GitHub 通过双语 README、截图、仓库 topics、在线演示和稳定文档链接提升项目发现率。
 
 ## 目录
 

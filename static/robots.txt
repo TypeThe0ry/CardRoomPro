@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /socket.io/
+Disallow: /discuz-sso/
+
+Sitemap: https://ddz.yutianfu.me/sitemap.xml

@@ -5,14 +5,67 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
   <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <meta name="description" content="雀阁 · 纸牌房是一个支持斗地主、掼蛋与四人麻将的实时多人在线牌局平台，提供 AI 陪玩、智囊推荐、观战、历史复盘和 Discuz SSO。">
+  <meta name="keywords" content="在线棋牌游戏,多人牌局,斗地主,掼蛋,麻将,麻将AI,纸牌AI,实时对战,Socket.IO,Discuz SSO,CardRoomPro">
+  <meta name="author" content="TypeThe0ry">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
   <meta name="theme-color" content="#0e2422">
+  <link rel="canonical" href="https://ddz.yutianfu.me/">
+  <link rel="alternate" hreflang="zh-CN" href="https://ddz.yutianfu.me/">
+  <link rel="alternate" hreflang="x-default" href="https://ddz.yutianfu.me/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="雀阁 · 纸牌房">
+  <meta property="og:title" content="雀阁 · 斗地主、掼蛋与麻将在线牌局">
+  <meta property="og:description" content="实时多人牌局、AI 陪玩、智囊推荐、观战与历史复盘。">
+  <meta property="og:url" content="https://ddz.yutianfu.me/">
+  <meta property="og:locale" content="zh_CN">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="雀阁 · 在线斗地主、掼蛋与麻将">
+  <meta name="twitter:description" content="实时多人牌局与 AI 陪玩平台。">
+  <link rel="manifest" href="/site.webmanifest">
   <link rel="icon" href="data:,">
   <title>雀阁 · 纸牌房</title>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebSite",
+        "@id": "https://ddz.yutianfu.me/#website",
+        "url": "https://ddz.yutianfu.me/",
+        "name": "雀阁 · 纸牌房",
+        "description": "支持斗地主、掼蛋与四人麻将的实时多人在线牌局平台。",
+        "inLanguage": "zh-CN",
+        "publisher": { "@id": "https://ddz.yutianfu.me/#organization" }
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://ddz.yutianfu.me/#application",
+        "name": "CardRoomPro / 雀阁 · 纸牌房",
+        "url": "https://ddz.yutianfu.me/",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "zh-CN",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": 0, "priceCurrency": "USD" },
+        "featureList": ["斗地主", "掼蛋", "四人麻将", "AI 陪玩", "历史战局复盘", "Discuz JWT SSO"],
+        "sameAs": "https://github.com/TypeThe0ry/CardRoomPro"
+      },
+      {
+        "@type": "Organization",
+        "@id": "https://ddz.yutianfu.me/#organization",
+        "name": "CardRoomPro",
+        "url": "https://github.com/TypeThe0ry/CardRoomPro",
+        "sameAs": "https://github.com/TypeThe0ry/CardRoomPro"
+      }
+    ]
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=history-replay-20260822-1">
+  <link rel="stylesheet" href="/css/style.css?v=sso-geo-20260822-1">
 </head>
 
 <body class="theme-guofeng">
@@ -50,6 +103,14 @@
           </div>
         </template>
       </div>
+      <section class="public-discovery" aria-labelledby="public-discovery-title">
+        <span class="public-discovery-kicker">CARDROOMPRO · REAL-TIME WEB CARD GAME</span>
+        <h1 id="public-discovery-title">雀阁 · 在线斗地主、掼蛋与麻将</h1>
+        <p>实时多人牌局平台，支持 AI 陪玩、智囊推荐、观战、历史战局复盘、排行榜和 Discuz 单点登录。</p>
+        <div class="public-discovery-tags"><span>斗地主</span><span>掼蛋</span><span>四人麻将</span><span>Node.js + Socket.IO</span></div>
+        <a href="https://github.com/TypeThe0ry/CardRoomPro" rel="noopener" target="_blank">查看 GitHub 开源仓库 →</a>
+      </section>
+      <noscript><p class="public-discovery-noscript">雀阁支持斗地主、掼蛋和四人麻将。请启用 JavaScript 进入实时牌局。</p></noscript>
     </div>
 
 
@@ -539,7 +600,7 @@
         var m = hash.match(/[#&]token=([^&]+)/);
         if (m) {
           var t = decodeURIComponent(m[1]);
-          try { localStorage.setItem('discuz_token', t); } catch (e) {}
+          try { sessionStorage.setItem('discuz_token', t); } catch (e) {}
           // 从 URL 上抹掉 token，避免被复制分享
           try {
             var clean = hash.replace(/([#&])token=[^&]+&?/, '$1').replace(/[#&]$/, '');
@@ -547,9 +608,15 @@
           } catch (e) {}
           return t;
         }
+        var ss = null;
+        try { ss = sessionStorage.getItem('discuz_token'); } catch (e) {}
+        if (ss) return ss;
         var ls = null;
         try { ls = localStorage.getItem('discuz_token'); } catch (e) {}
-        if (ls) return ls;
+        if (ls) {
+          try { sessionStorage.setItem('discuz_token', ls); } catch (e) {}
+          return ls;
+        }
       } catch (e) {}
       return _getCookie('discuz_token') || '';
     }
@@ -1409,7 +1476,7 @@
             }
             var logout = document.getElementById('stats-logout');
             if (logout) logout.onclick = function () {
-              try { localStorage.removeItem('discuz_token'); } catch (e) {}
+              try { sessionStorage.removeItem('discuz_token'); localStorage.removeItem('discuz_token'); } catch (e) {}
               layer.close(idx);
               location.reload();
             };
@@ -1419,14 +1486,14 @@
             if (loading) return;
             loading = true;
             render();
-            var token = self.token || localStorage.getItem('discuz_token') || '';
+            var token = self.token || (function () { try { return sessionStorage.getItem('discuz_token') || localStorage.getItem('discuz_token') || ''; } catch (e) { return ''; } }());
             var topRequests = games.map(function (gt) {
               return fetch('/api/score/top?gameType=' + gt + '&limit=20').then(function (r) { return r.ok ? r.json() : []; }).then(function (rows) {
                 self.topLists[gt] = Array.isArray(rows) ? rows : [];
               }).catch(function () { self.topLists[gt] = []; });
             });
             var mineRequests = self.myUser && self.myUser.uid ? games.map(function (gt) {
-              return fetch('/api/score/me?gameType=' + gt + '&token=' + encodeURIComponent(token)).then(function (r) { return r.ok ? r.json() : null; }).then(function (row) {
+              return fetch('/api/score/me?gameType=' + gt, { headers: token ? { Authorization: 'Bearer ' + token } : {} }).then(function (r) { return r.ok ? r.json() : null; }).then(function (row) {
                 self.myScores[gt] = row && row.uid ? row : null;
               }).catch(function () { self.myScores[gt] = null; });
             }) : [];
@@ -1443,12 +1510,12 @@
         },
         historyViewerQuery: function () {
           var params = [];
-          var token = _getDiscuzToken();
-          var username = (this.myUser && this.myUser.username) || (!this.myUser ? this.posState.self.name : '');
-          if (token) params.push('token=' + encodeURIComponent(token));
-          if (username) params.push('username=' + encodeURIComponent(username));
           if (this.guestId) params.push('guestId=' + encodeURIComponent(this.guestId));
           return params.join('&');
+        },
+        historyViewerHeaders: function () {
+          var token = _getDiscuzToken();
+          return token ? { Authorization: 'Bearer ' + token } : {};
         },
         historyCardText: function (card, gameType) {
           if (!card) return '';
@@ -1551,7 +1618,7 @@
           };
           var openDetail = function (id) {
             list.innerHTML = '<div class="stats-loading">复盘加载中...</div>';
-            fetch('/api/history/' + encodeURIComponent(id) + '?' + query()).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderDetail).catch(function () { list.innerHTML = '<div class="history-empty"><b>这局复盘不可见或已不存在</b><small>私密房只能由实际参与者查看。</small></div>'; });
+            fetch('/api/history/' + encodeURIComponent(id) + '?' + query(), { headers: self.historyViewerHeaders() }).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderDetail).catch(function () { list.innerHTML = '<div class="history-empty"><b>这局复盘不可见或已不存在</b><small>私密房只能由实际参与者查看。</small></div>'; });
           };
           var bindList = function () {
             if (!panel) return;
@@ -1564,7 +1631,7 @@
             if (loading) return;
             loading = true;
             if (list) list.innerHTML = '<div class="stats-loading">战局加载中...</div>';
-            fetch('/api/history?limit=30&gameType=' + encodeURIComponent(activeGame) + '&' + query()).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderList).catch(function () { if (list) list.innerHTML = '<div class="history-empty"><b>历史战局加载失败</b><small>请稍后刷新重试。</small></div>'; }).finally(function () { loading = false; });
+            fetch('/api/history?limit=30&gameType=' + encodeURIComponent(activeGame) + '&' + query(), { headers: self.historyViewerHeaders() }).then(function (r) { if (!r.ok) throw new Error('history'); return r.json(); }).then(renderList).catch(function () { if (list) list.innerHTML = '<div class="history-empty"><b>历史战局加载失败</b><small>请稍后刷新重试。</small></div>'; }).finally(function () { loading = false; });
           };
           bindList();
           loadList();
@@ -1602,7 +1669,7 @@
           // 退出自动登录流程：清掉可能过期的 token + 让用户重新选择
           this.isAutoLogin = false;
           if (this._autoLoginTimer) { clearTimeout(this._autoLoginTimer); this._autoLoginTimer = null; }
-          try { localStorage.removeItem('discuz_token'); } catch (e) {}
+          try { sessionStorage.removeItem('discuz_token'); localStorage.removeItem('discuz_token'); } catch (e) {}
           // 清掉 cookie 兜底
           try { document.cookie = 'discuz_token=; path=/; max-age=0'; } catch (e) {}
           if (msg) {

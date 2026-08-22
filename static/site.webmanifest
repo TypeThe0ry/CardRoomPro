@@ -1,0 +1,11 @@
+{
+  "name": "雀阁 · 纸牌房",
+  "short_name": "雀阁",
+  "description": "斗地主、掼蛋与四人麻将实时多人牌局平台",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "background_color": "#071716",
+  "theme_color": "#0e2422",
+  "lang": "zh-CN",
+  "dir": "ltr"
+}
