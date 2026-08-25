@@ -1646,13 +1646,10 @@
           var render = function (data) {
             data = data || {};
             var quality = data.dataQuality || {};
-            var metrics = quality.metrics || {};
-            var completedMode = metrics.games_completed && metrics.games_completed.mode === 'estimated' ? '（含历史估算）' : '';
-            var cards = [{ key: 'games', label: '完成战局' + completedMode, icon: '局' }, { key: 'visits', label: '页面访问', icon: '访' }, { key: 'plays', label: '游玩人次', icon: '玩' }, { key: 'game_starts', label: '开局次数' + (metrics.game_starts && metrics.game_starts.mode === 'estimated' ? '（估算）' : ''), icon: '开' }, { key: 'socket_connections', label: '连接次数', icon: '连' }, { key: 'spectator_visits', label: '观战次数', icon: '观' }];
+            var cards = [{ key: 'games', label: '完成战局', icon: '局' }, { key: 'visits', label: '页面访问', icon: '访' }, { key: 'plays', label: '游玩人次', icon: '玩' }, { key: 'game_starts', label: '开局次数', icon: '开' }, { key: 'socket_connections', label: '连接次数', icon: '连' }, { key: 'spectator_visits', label: '观战次数', icon: '观' }];
             var cardsHtml = cards.map(function (card) { return '<article class="site-stat-card"><i>' + card.icon + '</i><strong>' + Number(data[card.key] || 0).toLocaleString() + '</strong><span>' + esc(card.label) + '</span></article>'; }).join('');
-            var note = quality.recoveredAt ? '<div class="site-stats-note">历史数据已回填：' + esc(new Date(Number(quality.recoveredAt)).toLocaleString()) + '。完成战局按旧积分表估算，旧牌序/复盘动作没有原始记录的部分不伪造。</div>' : '';
             var gameRows = Array.isArray(quality.byGame) ? quality.byGame.map(function (item) { var label = item.gameType === 'mahjong' ? '麻将' : (item.gameType === 'guandan' ? '掼蛋' : '斗地主'); return '<div><b>' + label + '</b><span>玩家局数 ' + Number(item.playerRounds || 0).toLocaleString() + '</span><strong>' + Number(item.completedEstimate || 0).toLocaleString() + ' 局</strong></div>'; }).join('') : '';
-            grid.innerHTML = cardsHtml + note + (gameRows ? '<section class="site-stats-breakdown"><h3>历史来源拆分</h3>' + gameRows + '</section>' : '');
+            grid.innerHTML = cardsHtml + (gameRows ? '<section class="site-stats-breakdown"><h3>各玩法数据</h3>' + gameRows + '</section>' : '');
           };
           var load = function () { grid.innerHTML = '<div class="stats-loading">数据加载中...</div>'; fetch('/api/site-stats').then(function (r) { return r.ok ? r.json() : {}; }).then(render).catch(function () { render({}); }); };
           document.getElementById('site-stats-refresh').onclick = load;
