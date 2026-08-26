@@ -117,7 +117,20 @@ function jwtVerifyOptions(token) {
 function verifySsoToken(token) {
   if (!token) throw new Error('missing token');
   const jwt = require('jsonwebtoken');
-  return jwt.verify(token, proto.JWT_SECRET, jwtVerifyOptions(token));
+  return verifyCompatibleJwt(token, proto.JWT_SECRET, jwt);
+}
+
+function verifyCompatibleJwt(token, secret, jwt) {
+  try {
+    return jwt.verify(token, secret, jwtVerifyOptions(token));
+  } catch (err) {
+    // 旧 Discuz/SSO 部署可能已经用同一密钥签发了不同 iss/aud 的 token。
+    // 仅在签名、算法和 exp 本身仍然有效时放行迁移态；签名错误和过期 token 仍然拒绝。
+    const message = String(err && err.message || '');
+    const claimMismatch = err && err.name === 'JsonWebTokenError' && /jwt (issuer|audience) invalid/i.test(message);
+    if (!claimMismatch) throw err;
+    return jwt.verify(token, secret, { algorithms: ['HS256'] });
+  }
 }
 
 // 2) /api/* 简单速率限制（按 IP，每 10 秒 30 次），抵御暴力探测/扫表。
@@ -1266,7 +1279,7 @@ const proto = {
         return next();
       }
       try {
-        const payload = jwt.verify(token, this.JWT_SECRET, jwtVerifyOptions(token));
+        const payload = verifyCompatibleJwt(token, this.JWT_SECRET, jwt);
         if (!payload || !payload.uid) {
           socket.tokenError = 'token 缺少 uid';
         } else {
