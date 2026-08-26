@@ -3742,6 +3742,44 @@ button.btn-ghost {
   color: var(--jade-soft); font-family: var(--font-serif); letter-spacing: 0.2em;
   background: rgba(0,0,0,0.5); padding: 14px 30px; border: 1px solid var(--jade-line); border-radius: 6px;
 }
+.card-group-spectator-self {
+  pointer-events: none;
+  z-index: 5;
+}
+.card-group-spectator-self .card { pointer-events: none; }
+.text-tips-self { left: 50%; transform: translateX(-50%); }
+.game-pause-panel {
+  position: fixed;
+  top: 106px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 88;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: min(520px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 14px;
+  color: var(--text);
+  border: 1px solid rgba(233,193,120,0.48);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(42,30,18,0.96), rgba(12,44,37,0.96));
+  box-shadow: 0 10px 28px rgba(0,0,0,0.34), 0 0 24px rgba(233,193,120,0.12);
+}
+.game-pause-kicker {
+  flex: 0 0 auto;
+  color: #f3d691;
+  font-family: var(--font-brush);
+  letter-spacing: 0.12em;
+}
+.game-pause-panel strong { color: #fff0b8; white-space: nowrap; }
+.game-pause-panel span { flex: 1 1 auto; color: rgba(239,219,169,0.78); font-size: 12px; }
+.game-pause-ai { flex: 0 0 auto; min-width: 138px; height: 34px; padding: 0 12px; font-size: 12px; }
+@media (max-width: 720px) {
+  .game-pause-panel { top: 74px; flex-wrap: wrap; justify-content: center; gap: 6px 10px; padding: 8px 10px; }
+  .game-pause-panel span { flex-basis: 100%; text-align: center; }
+  .game-pause-ai { height: 30px; }
+}
 
 /* 系统消息：观战聊天 */
 .msg-spec .msg-bubble { color: var(--jade); border-color: var(--jade-line); }

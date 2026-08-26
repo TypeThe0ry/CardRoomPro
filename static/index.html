@@ -65,7 +65,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=spectator-seat-20260826-1">
+  <link rel="stylesheet" href="/css/style.css?v=spectator-pause-20260826-1">
 </head>
 
 <body class="theme-guofeng">
@@ -364,6 +364,13 @@
 
       <div v-if="isSpec && roomState.state === 0" class="spec-tip">本桌正在准备中，待开局后可观战。</div>
 
+      <div v-if="roomState.paused" class="game-pause-panel">
+        <div class="game-pause-kicker">对局已暂停</div>
+        <strong>{{roomState.pausePlayerName || '玩家'}} 已退出</strong>
+        <span>保留牌局 {{pauseSeconds}} 秒，等待玩家回归或房主补位</span>
+        <button v-if="canCallPauseAI" type="button" class="btn btn-jade game-pause-ai" @click="addBots">召唤 AI 补位并继续</button>
+      </div>
+
       <div class="card-groups" v-if="gameType !== 'mahjong' && roomState.state">
 
         <!-- 自己的牌列表 -->
@@ -375,7 +382,12 @@
             @touchmove.prevent="dragSelectTouchMove($event)"
             v-for="(card,index) in posState.self.cards"
             class="card" :class="'card-' + card.value + '-' + card.type" :data-card-key="card.value + '_' + card.type + '_' + (card.deck || 0)" :style="{left:index * handGap(posState.self.cards, 'self') + 'px',top:card.selected ? '-20px' : 0}">
-          </div>
+            </div>
+        </div>
+        <!-- 观战者看底部玩家的牌背，不能把第一个座位整块省略。 -->
+        <div class="card-group card-group-self card-group-spectator-self" :style="handGroupStyle(posState.self.cards, 'self')" v-if="isSpec && roomState.state > 0 && roomState.state < 3 && posState.self.state">
+          <div v-for="(card,index) in posState.self.cards" class="card card-unknow" :style="{left:index * handGap(posState.self.cards, 'self') + 'px'}"></div>
+          <div class="text-tips text-tips-self text-center">剩余：{{posState.self.cards.length}}张</div>
         </div>
         <!-- 左家的牌列表 -->
         <div class="card-group card-group-left" :style="handGroupStyle(posState.left.cards, 'side')">
@@ -722,6 +734,7 @@
           posId: '',//座位号
           deskId: '',//桌号
           roomCode: '',
+          roomOwnerName: '',
           gameType: 'doudizhu',
           selectedGameType: 'doudizhu',
           roomCodeInput: '',
@@ -742,12 +755,17 @@
           desks: [],
           client: '',
           viewportWidth: window.innerWidth || 1280,
+          _pauseTicker: null,
 
           cards: [],
 
           //房间状态
           roomState: {
             state: 0,//0准备状态 1叫分状态 2打牌状态 3结束状态
+            paused: false,
+            pausePosId: '',
+            pausePlayerName: '',
+            pauseRemainingMs: 0,
             ctxPos: '', //当前该哪个座位谁出牌或叫分 left right or self
             ctxCard: { //上家玩家的牌型
               len: 0,
@@ -923,6 +941,7 @@
             this.posId = data.posId;
             this.deskId = data.deskId;
             this.roomCode = data.roomCode || data.deskId;
+            this.roomOwnerName = data.ownerName || '';
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
             this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
@@ -931,6 +950,10 @@
             }.bind(this))
             this.updatePosStatus(data.posId, 1, this.posState.self.name || (this.myUser && this.myUser.username) || '游客', false, (this.myUser && this.myUser.avatarUrl) || this.posState.self.avatarUrl || '');
             this.posState.self.isDizhu = false;
+            this.applyPauseState(data.paused);
+            if (data.gameInProgress && data.snapshot) {
+              this.applySpectateSnapshot(data.snapshot);
+            }
             //this.msgList = [];
             this.$nextTick(function () {
               if (this.$refs.msgInput) this.$refs.msgInput.value = '';
@@ -955,6 +978,7 @@
             this.where = 2;
             this.deskId = data.deskId;
             this.roomCode = data.roomCode || data.deskId;
+            this.roomOwnerName = data.ownerName || '';
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
             this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
@@ -965,13 +989,13 @@
               this.updatePosStatus(p.posId, p.state, p.userName, !!p.isBot, p.avatarUrl);
             }.bind(this));
             this.posState.self.isDizhu = false;
-            this.$nextTick(function () {
-              if (this.$refs.msgInput) this.$refs.msgInput.value = '';
-            });
-            // 牌局已在进行中：套用快照恢复牌桌
+            this.applyPauseState(data.paused);
             if (data.gameInProgress && data.snapshot) {
               this.applySpectateSnapshot(data.snapshot);
             }
+            this.$nextTick(function () {
+              if (this.$refs.msgInput) this.$refs.msgInput.value = '';
+            });
             layer.closeAll();
             layer.msg('已进入观战', { time: 1200 });
           }.bind(this));
@@ -1002,6 +1026,25 @@
 
           this.client.on('ROOM_STATUS_CHANGE', function (data) {
             this.roomState.state = data.state;
+          }.bind(this));
+
+          this.client.on('GAME_PAUSED', function (data) {
+            this.startTimer(false);
+            this.roomState.timeout = 0;
+            this.applyPauseState(data);
+            layer.msg('玩家退出，对局已暂停，保留 1 分钟', { time: 1800 });
+          }.bind(this));
+
+          this.client.on('GAME_RESUMED', function (data) {
+            this.applyGameResume(data);
+            layer.msg(data && data.source === 'ai' ? 'AI 已补位，对局继续' : '玩家已回归，对局继续', { time: 1400 });
+          }.bind(this));
+
+          this.client.on('GAME_PAUSE_EXPIRED', function (data) {
+            this.startTimer(false);
+            this.applyPauseState(null);
+            this.roomState.state = 0;
+            layer.msg((data && data.playerName ? data.playerName : '玩家') + ' 离开超时，本局已结束', { time: 2200 });
           }.bind(this));
 
           this.client.on('FORCE_EXIT_EV', function (data) {
@@ -1352,6 +1395,59 @@
               '/': '&#47;'
             })[ch];
           });
+        },
+        clearPauseCountdown: function () {
+          if (this._pauseTicker) {
+            clearInterval(this._pauseTicker);
+            this._pauseTicker = null;
+          }
+        },
+        applyPauseState: function (data) {
+          this.clearPauseCountdown();
+          if (!data) {
+            this.roomState.paused = false;
+            this.roomState.pausePosId = '';
+            this.roomState.pausePlayerName = '';
+            this.roomState.pauseRemainingMs = 0;
+            return;
+          }
+          this.roomState.paused = true;
+          this.roomState.pausePosId = data.posId == null ? '' : data.posId;
+          this.roomState.pausePlayerName = data.playerName || '玩家';
+          this.roomState.pauseRemainingMs = Math.max(0, Number(data.remainingMs || (Number(data.expiresAt || 0) - Date.now())));
+          this._pauseTicker = setInterval(function () {
+            this.roomState.pauseRemainingMs = Math.max(0, Number(data.expiresAt || 0) - Date.now());
+            if (this.roomState.pauseRemainingMs <= 0) this.clearPauseCountdown();
+          }.bind(this), 250);
+        },
+        applyGameResume: function (data) {
+          data = data || {};
+          this.applyPauseState(null);
+          this.roomState.state = Number(data.status || this.roomState.state || 2);
+          this.roomState.timeout = Number(data.timeout || 30);
+          if (data.gameType) this.gameType = data.gameType;
+          if (this.gameType === 'mahjong' && data.mahjong) {
+            this.initMahjongState(data.mahjong);
+            this.roomState.ctxPos = this.getDirectionByPosId(data.mahjong.ctxPos);
+          } else {
+            this.roomState.ctxPos = this.getDirectionByPosId(data.ctxPos);
+            if (data.ctxScore) this.roomState.ctxScore = data.ctxScore;
+            if (data.calledScores) {
+              Object.keys(data.calledScores).forEach(function (pid) {
+                var direct = this.getDirectionByPosId(Number(pid));
+                if (direct && this.posState[direct]) this.posState[direct].callScore = data.calledScores[pid];
+              }.bind(this));
+            }
+            if (data.lastCardInfo) {
+              this.roomState.ctxCard = {
+                len: data.lastCardInfo.len || 0,
+                key: data.lastCardInfo.key || '',
+                type: data.lastCardInfo.type || '',
+                ctxPos: data.lastCardInfo.posId == null ? '' : this.getDirectionByPosId(data.lastCardInfo.posId)
+              };
+            }
+          }
+          this.startTimer(this.isSpec ? false : this.autoPlayCards.bind(this));
         },
         openStats: function () {
           var self = this;
@@ -1716,6 +1812,7 @@
         },
         roomStatusText: function (desk) {
           if (!desk) return '等待中';
+          if (desk.paused) return '对局暂停';
           if (desk.state > 1) return '对局中';
           if (this.deskBusyCount(desk) >= (desk.seatCount || (desk.positions || []).length)) return '满员待开';
           if (this.deskBusyCount(desk) > 0) return '等待队友';
@@ -2078,14 +2175,17 @@
           layer.load({ type: 3 });
         },
         resetRoomStatus: function () {
+          this.clearPauseCountdown();
           this.where = 1;
           this.posId = '';
           this.deskId = '';
           this.roomCode = '';
+          this.roomOwnerName = '';
           this.isSpec = false;
           this.gameType = 'doudizhu';
           this.posState.self.state = 0;
           this.roomState.state = 0;
+          this.applyPauseState(null);
           this.roomState.ctxCard = { len: 0, key: '', type: '', ctxPos: '' };
           this.posState.left.callScore = -1;
           this.posState.right.callScore = -1;
@@ -2625,6 +2725,13 @@
           if (this.mahjong.action === 'claim') return '等待其他玩家响应';
           var direct = this.getDirectionByPosId(this.mahjong.ctxPos);
           return direct === 'self' ? '轮到你出牌' : (this.getNameByPosId(this.mahjong.ctxPos) + ' 摸牌');
+        },
+        pauseSeconds: function () {
+          return Math.max(0, Math.ceil(Number(this.roomState.pauseRemainingMs || 0) / 1000));
+        },
+        canCallPauseAI: function () {
+          if (this.isSpec || !this.roomState.paused || !this.roomOwnerName) return false;
+          return this.posState.self.name === this.roomOwnerName || (this.myUser && this.myUser.username === this.roomOwnerName);
         },
         topPlayerStyle: function () {
           if (this.gameType !== 'guandan') return {};

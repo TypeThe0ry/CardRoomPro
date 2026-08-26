@@ -74,6 +74,7 @@ const DOU_DIZHU_PLAY_TIMEOUT = 30;
 const DOU_DIZHU_STEP_TIMEOUT = 15;
 const GUANDAN_PLAY_TIMEOUT = 45;
 const MAHJONG_PLAY_TIMEOUT = 30;
+const GAME_PAUSE_GRACE_MS = 60 * 1000;
 
 // ========== 安全加固：API 防滥用 ==========
 // 设计原则：所有"加分/扣分"都只能由服务端 socket 流程里的 game.getResult() 触发，
@@ -419,6 +420,7 @@ function GameServer(port) {
   this.desks = [];
   this.gameDatas = {};
   this.botTimers = {};
+  this.pauseTimers = {};
   this.mahjongClaimTimers = {};
   this.roundHistories = {};
   this.nextRoomId = 1;
@@ -471,6 +473,7 @@ const proto = {
       seatCount: meta.seats,
       isPrivate: !!options.isPrivate,
       ownerName: options.ownerName || '',
+      pauseInfo: null,
       createdAt: Date.now(),
       positions: createPositions(meta.seats),
       guandanLevelRank: 15,
@@ -493,6 +496,8 @@ const proto = {
         seatCount: room.seatCount,
         isPrivate: room.isPrivate,
         ownerName: room.ownerName,
+        paused: !!room.pauseInfo,
+        pauseExpiresAt: room.pauseInfo ? room.pauseInfo.expiresAt : 0,
         guandanLevelLabel: room.guandanLevelLabel,
         positions: room.positions.map(p => ({
           posId: p.posId,
@@ -527,8 +532,11 @@ const proto = {
     if (!room) return;
     const hasHuman = this.clients.some(c => c.deskId === deskId && c.posId !== 'spec');
     if (hasHuman) return;
+    // 对局暂停窗口内保留房间和牌局，给房主/回归玩家一分钟处理时间。
+    if (room.pauseInfo) return;
     this.removeAllBots(deskId);
     this.clearBotTimer(deskId);
+    this.clearPauseTimer(deskId);
     this.clearMahjongClaimTimer(deskId);
     if (this.gameDatas[deskId]) {
       this.gameDatas[deskId].init();
@@ -751,6 +759,8 @@ const proto = {
   startGame(deskId) {
     const room = this.getDesk(deskId);
     if (!room) return;
+    room.pauseInfo = null;
+    this.clearPauseTimer(deskId);
     if (this.gameDatas[deskId] === undefined) {
       this.gameDatas[deskId] = room.gameType === 'guandan'
         ? new GuandanGame({ levelRank: room.guandanLevelRank || 15 })
@@ -880,6 +890,148 @@ const proto = {
   clearBotTimer(deskId) {
     if (this.botTimers[deskId]) { clearTimeout(this.botTimers[deskId]); this.botTimers[deskId] = null; }
   },
+  clearPauseTimer(deskId) {
+    if (this.pauseTimers[deskId]) { clearTimeout(this.pauseTimers[deskId]); this.pauseTimers[deskId] = null; }
+  },
+  isGamePaused(deskId) {
+    const room = this.getDesk(deskId);
+    return !!(room && room.pauseInfo);
+  },
+  isRoomOwner(socket, desk) {
+    if (!socket || !desk || !desk.ownerName) return false;
+    const userName = this.getUserName(socket);
+    return !!userName && userName === desk.ownerName;
+  },
+  getGameTimeout(room, game) {
+    if (!room || !game) return DOU_DIZHU_STEP_TIMEOUT;
+    if (room.gameType === 'mahjong') return MAHJONG_PLAY_TIMEOUT;
+    if (room.gameType === 'guandan') return GUANDAN_PLAY_TIMEOUT;
+    return game.getStatus && game.getStatus() === 2 ? DOU_DIZHU_PLAY_TIMEOUT : DOU_DIZHU_STEP_TIMEOUT;
+  },
+  getGameSnapshot(deskId) {
+    const desk = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!desk || !game || !game.getStatus || game.getStatus() <= 0 || game.getStatus() >= 3) return null;
+    const status = game.getStatus();
+    const cards = (game.getCards && game.getCards()) || [];
+    // 斗地主的 id=3 是底牌；掼蛋的四个 id 都是玩家手牌，不能误删 id=3。
+    const handGroups = cards
+      .filter(group => desk.gameType !== 'doudizhu' || group.id !== 3)
+      .map(group => ({
+        id: group.id,
+        cards: (group.cards || []).map(card => ({ value: card.value, type: card.type, ...(card.deck == null ? {} : { deck: card.deck }) }))
+      }));
+    const snapshot = {
+      status,
+      gameType: desk.gameType,
+      levelLabel: desk.guandanLevelLabel,
+      levelRank: desk.guandanLevelRank,
+      cards: handGroups,
+      callScores: game.getCalledScores ? Object.assign({}, game.getCalledScores()) : {},
+      ctxPosId: game.getContextPosId ? game.getContextPosId() : '',
+      ctxScore: game.getContextScore ? game.getContextScore() : [],
+      lastCardInfo: game.lastCardInfo ? Object.assign({}, game.lastCardInfo) : null,
+    };
+    if (desk.gameType === 'mahjong' && game.getPublicState) {
+      snapshot.mahjong = game.getPublicState();
+    }
+    if (desk.gameType === 'doudizhu' && status >= 2) {
+      snapshot.dizhuPosId = game.getDiZhuPosId ? game.getDiZhuPosId() : '';
+      const top = (game.getTopCards && game.getTopCards()) || [];
+      snapshot.topCards = top.map(card => ({ value: card.value, type: card.type }));
+    }
+    return snapshot;
+  },
+  getPausePayload(room) {
+    if (!room || !room.pauseInfo) return null;
+    return {
+      posId: room.pauseInfo.posId,
+      playerName: room.pauseInfo.playerName || '玩家',
+      expiresAt: room.pauseInfo.expiresAt,
+      remainingMs: Math.max(0, room.pauseInfo.expiresAt - Date.now()),
+    };
+  },
+  getGameResumePayload(deskId) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game) return null;
+    const payload = {
+      gameType: room.gameType,
+      status: game.getStatus ? game.getStatus() : 0,
+      ctxPos: game.getContextPosId ? game.getContextPosId() : '',
+      ctxScore: game.getContextScore ? game.getContextScore() : [],
+      calledScores: game.getCalledScores ? Object.assign({}, game.getCalledScores()) : {},
+      lastCardInfo: game.lastCardInfo ? Object.assign({}, game.lastCardInfo) : null,
+      timeout: this.getGameTimeout(room, game),
+    };
+    if (room.gameType === 'mahjong' && game.getPublicState) {
+      payload.mahjong = game.getPublicState();
+      payload.ctxPos = payload.mahjong.ctxPos;
+      payload.timeout = MAHJONG_PLAY_TIMEOUT;
+    }
+    if (room.gameType === 'doudizhu' && payload.status >= 2) {
+      payload.dizhuPosId = game.getDiZhuPosId ? game.getDiZhuPosId() : '';
+      payload.topCards = (game.getTopCards ? game.getTopCards() : []).map(card => ({ value: card.value, type: card.type }));
+    }
+    return payload;
+  },
+  pauseGameForMissingPlayer(deskId, posId, playerName) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !game || !game.getStatus || game.getStatus() <= 0 || game.getStatus() >= 3) return false;
+    this.clearBotTimer(deskId);
+    this.clearMahjongClaimTimer(deskId);
+    this.clearPauseTimer(deskId);
+    room.pauseInfo = {
+      posId: Number(posId),
+      playerName: playerName || '玩家',
+      expiresAt: Date.now() + GAME_PAUSE_GRACE_MS,
+    };
+    this.broadCastRoom('GAME_PAUSED', deskId, this.getPausePayload(room));
+    this.refreshLobby();
+    this.pauseTimers[deskId] = setTimeout(() => this.expirePausedGame(deskId), GAME_PAUSE_GRACE_MS + 100);
+    return true;
+  },
+  resumePausedGame(deskId, source) {
+    const room = this.getDesk(deskId);
+    if (!room || !room.pauseInfo) return false;
+    const paused = room.pauseInfo;
+    this.clearPauseTimer(deskId);
+    room.pauseInfo = null;
+    const payload = this.getGameResumePayload(deskId);
+    if (payload) {
+      payload.source = source || 'human';
+      payload.posId = paused.posId;
+      payload.isBot = this.isBotPos(deskId, paused.posId);
+      this.broadCastRoom('GAME_RESUMED', deskId, payload);
+    }
+    this.refreshLobby();
+    this.scheduleBotAction(deskId);
+    return true;
+  },
+  expirePausedGame(deskId) {
+    const room = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    if (!room || !room.pauseInfo) return;
+    const paused = room.pauseInfo;
+    this.clearPauseTimer(deskId);
+    room.pauseInfo = null;
+    this.clearBotTimer(deskId);
+    this.clearMahjongClaimTimer(deskId);
+    if (game) game.init();
+    delete this.roundHistories[deskId];
+    room.positions.forEach(pos => {
+      if (pos.state > 0 && !pos.isBot) pos.state = 1;
+    });
+    this.updateRoomStatus(deskId, 0);
+    this.broadCastRoom('GAME_PAUSE_EXPIRED', deskId, {
+      posId: paused.posId,
+      playerName: paused.playerName || '玩家',
+    });
+    this.broadCastRoom('ROOM_STATUS_CHANGE', deskId, { state: 0 });
+    this.refreshLobby();
+    this.cleanupRoomIfEmpty(deskId);
+  },
   clearMahjongClaimTimer(deskId) {
     if (this.mahjongClaimTimers[deskId]) {
       clearTimeout(this.mahjongClaimTimers[deskId]);
@@ -955,6 +1107,7 @@ const proto = {
     this.clearBotTimer(deskId);
     const room = this.getDesk(deskId);
     if (!room) return;
+    if (room.pauseInfo) return;
     const game = this.gameDatas[deskId];
     if (!game) return;
     const status = game.getStatus();
@@ -984,7 +1137,7 @@ const proto = {
   scheduleMahjongBotAction(deskId) {
     const room = this.getDesk(deskId);
     const game = this.gameDatas[deskId];
-    if (!room || !game || game.getStatus() !== 2) return;
+    if (!room || room.pauseInfo || !game || game.getStatus() !== 2) return;
     this.clearBotTimer(deskId);
     const pending = game.getPendingClaim && game.getPendingClaim();
     let botPos = null;
@@ -1002,7 +1155,7 @@ const proto = {
   botPlayMahjong(deskId, posId) {
     const room = this.getDesk(deskId);
     const game = this.gameDatas[deskId];
-    if (!room || !game || game.getStatus() !== 2 || !this.isBotPos(deskId, posId)) return;
+    if (!room || room.pauseInfo || !game || game.getStatus() !== 2 || !this.isBotPos(deskId, posId)) return;
     const pending = game.getPendingClaim && game.getPendingClaim();
     const publicState = game.getPublicState();
     const aiOptions = {
@@ -1076,6 +1229,7 @@ const proto = {
     this.scheduleMahjongBotAction(deskId);
   },
   botCallScore(deskId, posId) {
+    if (this.isGamePaused(deskId)) return;
     const game = this.gameDatas[deskId];
     if (!game) return;
     const ctxScore = game.getContextScore() || [];
@@ -1109,6 +1263,7 @@ const proto = {
     }
   },
   botPlayCard(deskId, posId) {
+    if (this.isGamePaused(deskId)) return;
     const game = this.gameDatas[deskId];
     if (!game) return;
     const handRaw = (game.getCardsByPosId(posId) || []).slice(0);
@@ -1186,7 +1341,7 @@ const proto = {
   botPlayGuandanCard(deskId, posId) {
     const room = this.getDesk(deskId);
     const game = this.gameDatas[deskId];
-    if (!room || !game) return;
+    if (!room || room.pauseInfo || !game) return;
     const handRaw = (game.getCardsByPosId(posId) || []).slice(0);
     const last = game.lastCardInfo || {};
     const lead = !last.len || Number(last.posId) === Number(posId);
@@ -1430,6 +1585,7 @@ const proto = {
         const pos = desk && this.getPosition(desk, posId);
         const game = this.gameDatas[deskId];
         const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
+        const pausedForPosition = !!(desk && desk.pauseInfo && Number(desk.pauseInfo.posId) === Number(posId));
         const reservedForMe = pos && (!pos.pendingSocketId || pos.pendingSocketId === socket.id);
         const canTake = pos && ((pos.state === 0 && reservedForMe) || (pos.isBot && !inProgress));
         if (canTake) {
@@ -1457,6 +1613,10 @@ const proto = {
             isPrivate: desk.isPrivate,
             guandanLevelLabel: desk.guandanLevelLabel,
             guandanLevelRank: desk.guandanLevelRank,
+            ownerName: desk.ownerName,
+            gameInProgress: inProgress,
+            snapshot: inProgress ? this.getGameSnapshot(deskId) : null,
+            paused: this.getPausePayload(desk),
             positions: desk.positions,
             posInfos
           });
@@ -1470,6 +1630,9 @@ const proto = {
           //推送一条无关紧要的消息
           socket.emit('USER_MESSAGE', { type: 'SYS', posId, msg: '欢迎您加入本房间，祝您游戏愉快！', id: guid(), time: time() });
           this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId, msg: `玩家[${this.getUserName(socket)}]进入房间`, id: guid(), time: time() }, socket);
+          if (pausedForPosition) {
+            this.resumePausedGame(deskId, 'human');
+          }
         } else {
           //通知该客户端此座位被人占用
           socket.emit('SITDOWN_ERROR', { msg: '该位置已有人' });
@@ -1494,10 +1657,12 @@ const proto = {
           return;
         }
         console.log('有客户端退出房间，桌号：%s，座位：%s，时间：', deskId, posId, time());
+        const desk = this.getDesk(deskId);
+        const game = this.gameDatas[deskId];
+        const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
+        const leavingName = this.getUserName(socket) || (desk && this.getPosition(desk, posId) && this.getPosition(desk, posId).userName) || '玩家';
         //更新座位状态
         this.updatePosStatus(deskId, posId, 0, '');
-        //重置房间状态
-        this.updateRoomStatus(deskId, 0);
         //解绑座位号 桌号
         this.updateClientState(socket);
         //通知在房间里的其它客户端，更新座位息
@@ -1505,29 +1670,14 @@ const proto = {
         //通知大厅其它客户端更新该座位信息
         this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
 
-        //如果在游戏中，则有玩家强行退出，重置此房间其它玩家的状态为未准备
-        //获取此桌游戏数据
-        const game = this.gameDatas[deskId];
-        //判断是否在进行游戏
-        if (game) {
-          const status = game.getStatus();
-          if (game && status && status !== 3) {
-            this.clearBotTimer(deskId);
-            this.clearMahjongClaimTimer(deskId);
-            //更新其它两位玩家的座位状态为未准备
-            this.updateOtherPosStatus(deskId, posId, 1);
-            //获取其它两位玩家的座位信息
-            const otherPosInfo = this.getOtherPosInfo(deskId, posId);
-            //通知其它两位玩家重置自己的状态为未准备
-            this.broadCastRoom("POS_STATUS_RESET", deskId, { pos: otherPosInfo, state: 1 });
-            //通知其它两位玩家重置房间状态
-            this.broadCastRoom('ROOM_STATUS_CHANGE', deskId, { state: 0 });
-            //通知其它两位玩家当前玩家逃跑
-            this.broadCastRoom('FORCE_EXIT_EV', deskId, { msg: '有玩家逃跑，游戏结束', posId });
-
-            game.init();
-
-          }
+        if (inProgress) {
+          // 保留 game 对象和牌局状态，进入一分钟暂停窗口；房主可以用 AI 补位。
+          this.updateOtherPosStatus(deskId, posId, 1);
+          this.broadCastRoom("POS_STATUS_RESET", deskId, { pos: this.getOtherPosInfo(deskId, posId), state: 1 });
+          this.pauseGameForMissingPlayer(deskId, posId, leavingName);
+        } else {
+          // 非对局阶段仍按原逻辑回到等待状态。
+          this.updateRoomStatus(deskId, 0);
         }
         //通知当前玩家退出房间成功
         socket.emit('UNSITDOWN_SUCCESS', this.getLobbyRooms());
@@ -1536,7 +1686,7 @@ const proto = {
         //推送一条无关紧要的消息
         this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId, msg: `玩家[${this.getUserName(socket)}]退出房间`, id: guid(), time: time() })
 
-        // 若该桌已无真人，则清退所有 AI、清掉计时器、重置 game
+        // 若该桌已无真人，则非暂停状态清退房间；暂停窗口由过期计时器负责收尾。
         if (!this.hasHumanAtDesk(deskId)) {
           this.cleanupRoomIfEmpty(deskId);
         } else {
@@ -1579,6 +1729,10 @@ const proto = {
         const room = this.getDesk(client.deskId);
         const game = this.gameDatas[client.deskId];
         if (!room || room.gameType !== 'mahjong' || !game || game.getStatus() !== 2) return;
+        if (room.pauseInfo) {
+          socket.emit('MAHJONG_ERROR', { msg: '对局已暂停，等待房主召唤 AI 或玩家回归' });
+          return;
+        }
         const posId = Number(client.posId);
         const action = data && data.action;
         const pendingBefore = game.getPendingClaim && game.getPendingClaim();
@@ -1636,7 +1790,8 @@ const proto = {
         }
         const { deskId, posId } = client;
         const game = this.gameDatas[deskId];
-        if (!game || !deskId) {
+        const room = this.getDesk(deskId);
+        if (!game || !deskId || (room && room.pauseInfo)) {
           return;
         }
         const status = game.next(posId, score).getStatus();
@@ -1685,6 +1840,10 @@ const proto = {
         const game = this.gameDatas[deskId];
         const room = this.getDesk(deskId);
         if (room && room.gameType === 'mahjong') return;
+        if (room && room.pauseInfo) {
+          socket.emit('PLAY_CARD_ERROR', '对局已暂停，等待房主召唤 AI 或玩家回归');
+          return;
+        }
         if (game && deskId) {
           const ret = game.validate(posId, data);
           const isPass = !data.length;
@@ -1756,9 +1915,10 @@ const proto = {
             return;
           }
           //更新座位状态
+          const desk = this.getDesk(deskId);
+          const game = this.gameDatas[deskId];
+          const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
           this.updatePosStatus(deskId, posId, 0, '');
-          //重置房间状态
-          this.updateRoomStatus(deskId, 0);
           //解绑座位号 桌号
           this.updateClientState(socket);
           //通知在房间里的其它客户端，更新座位息
@@ -1766,25 +1926,12 @@ const proto = {
           //通知大厅其它客户端更新该座位信息
           this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
 
-          //如果在游戏中，则有玩家强行退出，重置此房间其它玩家的状态为未准备
-          //获取此桌游戏数据
-          const game = this.gameDatas[deskId];
-          //判断是否在进行游戏
-          if (game) {
-            const status = game.getStatus();
-            if (game && status && status !== 3) {
-              //更新其它两位玩家的座位状态为未准备
-              this.updateOtherPosStatus(deskId, posId, 1);
-              //获取其它两位玩家的座位信息
-              const otherPosInfo = this.getOtherPosInfo(deskId, posId);
-              //通知其它两位玩家重置自己的状态为未准备
-              this.broadCastRoom("POS_STATUS_RESET", deskId, { pos: otherPosInfo, state: 1 });
-              //通知其它两位玩家重置房间状态
-              this.broadCastRoom('ROOM_STATUS_CHANGE', deskId, { state: 0 });
-              //通知其它两位玩家当前玩家逃跑
-              this.broadCastRoom('FORCE_EXIT_EV', deskId, { msg: '有玩家逃跑，游戏结束', posId });
-              game.init();
-            }
+          if (inProgress) {
+            this.updateOtherPosStatus(deskId, posId, 1);
+            this.broadCastRoom("POS_STATUS_RESET", deskId, { pos: this.getOtherPosInfo(deskId, posId), state: 1 });
+            this.pauseGameForMissingPlayer(deskId, posId, userName || '玩家');
+          } else {
+            this.updateRoomStatus(deskId, 0);
           }
           //推送一条无关紧要的消息
           this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId, msg: `玩家[${userName}]退出房间`, id: guid(), time: time() })
@@ -1849,46 +1996,19 @@ const proto = {
         const game = this.gameDatas[deskId];
         const status = game && game.getStatus ? game.getStatus() : 0;
         const gameInProgress = status >= 1 && status < 3;
-        let snapshot = null;
-        if (gameInProgress) {
-          // 把当前对局快照（叫分中或出牌中）发给观战者，便于无缝接入
-          const cards = (game.getCards && game.getCards()) || [];
-          // 仅把座位 0/1/2 的手牌打包（id=3 是底牌）
-          const handGroups = cards.filter(g => g.id !== 3).map(g => ({
-            id: g.id,
-            cards: g.cards.map(c => ({ value: c.value, type: c.type }))
-          }));
-          snapshot = {
-            status,
-            gameType: desk.gameType,
-            levelLabel: desk.guandanLevelLabel,
-            levelRank: desk.guandanLevelRank,
-            cards: handGroups,
-            callScores: game.getCalledScores ? Object.assign({}, game.getCalledScores()) : {},
-            ctxPosId: game.getContextPosId ? game.getContextPosId() : '',
-            ctxScore: game.getContextScore ? game.getContextScore() : [],
-            lastCardInfo: game.lastCardInfo ? Object.assign({}, game.lastCardInfo) : null,
-          };
-          if (desk.gameType === 'mahjong' && game.getPublicState) {
-            snapshot.mahjong = game.getPublicState();
-          }
-          if (desk.gameType === 'doudizhu' && status >= 2) {
-            snapshot.dizhuPosId = game.getDiZhuPosId ? game.getDiZhuPosId() : '';
-            const top = (game.getTopCards && game.getTopCards()) || [];
-            snapshot.topCards = top.map(c => ({ value: c.value, type: c.type }));
-          }
-        }
         socket.emit('SPECTATE_SUCCESS', {
           deskId,
           roomCode: desk.roomCode,
           gameType: desk.gameType,
           gameLabel: desk.gameLabel,
           seatCount: desk.seatCount,
+          ownerName: desk.ownerName,
           guandanLevelLabel: desk.guandanLevelLabel,
           guandanLevelRank: desk.guandanLevelRank,
           positions: desk.positions,
           gameInProgress,
-          snapshot,
+          snapshot: gameInProgress ? this.getGameSnapshot(deskId) : null,
+          paused: this.getPausePayload(desk),
         });
         const userName = this.getUserName(socket) || '观众';
         this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName}]进入房间`, id: guid(), time: time() }, socket);
@@ -1918,6 +2038,22 @@ const proto = {
         const desk = this.getDesk(deskId);
         if (!desk) return;
         const game = this.gameDatas[deskId];
+        if (desk.pauseInfo && game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3) {
+          if (!this.isRoomOwner(socket, desk)) {
+            socket.emit('USER_MESSAGE', { type: 'SYS', posId: client.posId, msg: '只有房主可以在暂停时召唤 AI 补位', id: guid(), time: time() });
+            return;
+          }
+          const pausedPosId = Number(desk.pauseInfo.posId);
+          const pausedPos = this.getPosition(desk, pausedPosId);
+          if (!pausedPos || pausedPos.state !== 0) {
+            socket.emit('USER_MESSAGE', { type: 'SYS', posId: client.posId, msg: '暂停座位已被接管', id: guid(), time: time() });
+            return;
+          }
+          this.seatBot(deskId, pausedPosId);
+          this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: client.posId, msg: '房主已召唤 AI 补位，对局继续', id: guid(), time: time() });
+          this.resumePausedGame(deskId, 'ai');
+          return;
+        }
         if (game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3) {
           socket.emit('USER_MESSAGE', { type: 'SYS', posId: client.posId, msg: '游戏中，无法召唤 AI', id: guid(), time: time() });
           return;
