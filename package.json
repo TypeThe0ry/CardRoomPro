@@ -8,8 +8,9 @@
     "start": "node server.js",
     "test:ai": "node test/ai.test.js",
     "test:history": "node test/history.test.js",
+    "test:spectator-ui": "node test/spectator-ui.test.js",
     "stats:backfill": "node scripts/backfill-site-stats.js",
-    "test": "npm run test:ai && npm run test:history"
+    "test": "npm run test:ai && npm run test:history && npm run test:spectator-ui"
   },
   "author": "TypeThe0ry",
   "license": "MIT",

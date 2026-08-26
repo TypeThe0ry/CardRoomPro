@@ -1304,6 +1304,10 @@ button.btn-ghost {
   left: 24px !important;
   bottom: 24px !important;
 }
+/* 观战时底部座位代表真实的第一位玩家，不要因为隐藏手牌而一起隐藏头像。 */
+.room-spec .player-self-ctx {
+  display: block !important;
+}
 
 .room-playing .msg-box {
   top: 78px;
@@ -3372,6 +3376,7 @@ button.btn-ghost {
 .mahjong-seat-top { top: 96px; width: min(470px, 45vw); }
 .mahjong-seat-left { left: 18px; top: 47%; }
 .mahjong-seat-right { right: 238px; top: 47%; }
+.mahjong-seat-bottom { top: calc(48% + 202px); left: 50%; transform: translateX(-50%); width: min(470px, 45vw); }
 .mahjong-seat-head,
 .mahjong-self-label { align-items: center; justify-content: center; gap: 7px; }
 .mahjong-seat-head span,
@@ -3448,6 +3453,7 @@ button.btn-ghost {
   .mahjong-seat { width: 145px; }
   .mahjong-seat-top { width: 400px; }
   .mahjong-seat-right { right: 205px; }
+  .mahjong-seat-bottom { top: calc(48% + 181px); width: 400px; }
   .mahjong-back-row i { flex-basis: 18px; width: 18px; height: 26px; }
   .mahjong-hand-wrap { width: min(760px, calc(100vw - 245px)); }
   .mahjong-hand-tile { font-size: 42px; }
@@ -3478,6 +3484,7 @@ button.btn-ghost {
   .mahjong-seat-top { top: 67px; width: 310px; }
   .mahjong-seat-left { left: 5px; top: 45%; }
   .mahjong-seat-right { right: 5px; top: 45%; }
+  .mahjong-seat-bottom { top: calc(46% + 146px); width: 310px; }
   .mahjong-seat-head { font-size: 10px; }
   .mahjong-seat-head em { display: none; }
   .mahjong-seat-wind { flex-basis: 20px; width: 20px; height: 20px; font-size: 12px; }
@@ -3500,6 +3507,7 @@ button.btn-ghost {
   .mahjong-board { width: 520px; min-width: 520px; transform: translate(-50%, -50%) scale(0.72); }
   .mahjong-seat-right { right: 8px; }
   .mahjong-seat-top { top: 205px; }
+  .mahjong-seat-bottom { top: calc(50% + 172px); width: min(300px, 58vw); }
   .mahjong-hand-wrap { bottom: 46px; }
 }
 

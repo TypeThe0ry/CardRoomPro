@@ -65,7 +65,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=sso-geo-20260822-1">
+  <link rel="stylesheet" href="/css/style.css?v=spectator-seat-20260826-1">
 </head>
 
 <body class="theme-guofeng">
@@ -270,6 +270,12 @@
           <div class="mahjong-seat-head"><i class="mahjong-seat-wind">{{mahjongWindForDirection('right')}}</i><span>{{posState.right.name}}</span><b v-if="posIdForDirection('right') === 0">庄</b><em>{{mahjongHandCount('right')}}</em></div>
           <div class="mahjong-back-stack"><i v-for="n in mahjongBackCount('right')" :key="'right-' + n"></i></div>
           <div class="mahjong-meld-row"><span v-for="(meld, index) in mahjong.melds.right" :key="'right-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'rm-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
+        </div>
+        <!-- 观战者也要看到真实的第四个座位，但不展示该玩家手牌。 -->
+        <div class="mahjong-seat mahjong-seat-bottom" v-if="isSpec && posState.self.state" :class="{active: roomState.ctxPos === 'self'}">
+          <div class="mahjong-seat-head"><i class="mahjong-seat-wind">{{mahjongWindForDirection('self')}}</i><span>{{posState.self.name}}</span><b v-if="posIdForDirection('self') === 0">庄</b><em>{{mahjongHandCount('self')}}</em></div>
+          <div class="mahjong-back-row"><i v-for="n in mahjongBackCount('self')" :key="'self-spec-' + n"></i></div>
+          <div class="mahjong-meld-row"><span v-for="(meld, index) in mahjong.melds.self" :key="'self-spec-meld-' + index" class="mahjong-meld"><em v-for="(tile, ti) in meld.cards" :key="'sm-spec-' + ti"><mahjong-tile-face :tile="tile"></mahjong-tile-face></em></span></div>
         </div>
 
         <div class="mahjong-board">
@@ -507,7 +513,7 @@
 
         </div>
 
-        <div class="player-wrapper player-self-ctx" v-if="!isSpec && roomState.state > 0 && !(roomState.state === 3 && posState.self.state === 2)">
+        <div class="player-wrapper player-self-ctx" :class="{'spectator-self': isSpec}" v-if="roomState.state > 0 && !(roomState.state === 3 && posState.self.state === 2)">
           <div class="player-photo" :class="{'player-photo-king':posState.self.isDizhu}" :style="playerPhotoStyle(posState.self)"></div>
           <div class="player-name text-center">{{posState.self.name}}</div>
         </div>
