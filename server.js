@@ -69,6 +69,11 @@ const MahjongAI = require('./static/js/mahjong-ai.js').MahjongAI;
 const AiDifficulty = require('./ai-difficulty.js');
 const db = require('./db.js');
 
+// 站点运营数据有变化时主动推送给所有在线页面；前端统计弹窗无需手动刷新。
+db.subscribeSiteStats(stats => {
+  io.emit('SITE_STATS_UPDATE', stats || {});
+});
+
 // 底分（每分对应多少积分）。可通过环境变量调整。
 const SCORE_BASE = Number(process.env.SCORE_BASE || 1);
 const DOU_DIZHU_PLAY_TIMEOUT = 30;
@@ -216,6 +221,9 @@ app.get('/api/history/:id', (req, res) => {
 });
 
 app.get('/api/site-stats', (req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
   db.getSiteStats().then(stats => res.json(stats)).catch(() => res.status(500).json({ error: 'stats_error' }));
 });
 
@@ -1508,6 +1516,8 @@ const proto = {
       if (socket.tokenError) {
         socket.emit('LOGIN_FAIL', { msg: socket.tokenError, code: 'TOKEN_INVALID' });
       }
+      // 新连接先拿一份当前快照，后续由 SITE_STATS_UPDATE 持续刷新。
+      db.getSiteStats().then(stats => socket.emit('SITE_STATS_UPDATE', stats || {})).catch(() => {});
       // if socket was authenticated via token, auto-register client
       if (socket.user) {
         try {

@@ -1983,6 +1983,9 @@ button.btn-ghost {
 .history-eyebrow { color: var(--gold-300); font: 600 10px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
 .history-hero h2 { margin: 9px 0 5px; color: var(--gold-100); font: 700 27px/1 var(--font-serif); letter-spacing: .1em; }
 .history-hero p { margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
+.site-stats-live { display: inline-flex; align-items: center; gap: 5px; margin-left: 8px; padding: 5px 8px; color: #d7f5dc; border: 1px solid rgba(125,219,153,0.28); border-radius: 999px; background: rgba(68,159,92,0.13); font: 600 10px/1 var(--font-mono); letter-spacing: .04em; vertical-align: middle; }
+.site-stats-live i { color: #79dc91; font-style: normal; font-size: 12px; animation: site-stats-pulse 1.8s ease-in-out infinite; }
+@keyframes site-stats-pulse { 0%, 100% { opacity: .55; transform: scale(.86); } 50% { opacity: 1; transform: scale(1); } }
 .history-filter { display: flex; gap: 8px; padding: 16px 20px 12px; overflow-x: auto; border-bottom: 1px solid rgba(255,255,255,0.07); }
 .history-filter-btn { min-width: 72px; height: 34px; padding: 0 13px; color: var(--text-soft); background: rgba(255,255,255,0.035); border: 1px solid rgba(233,193,120,0.16); border-radius: 999px; }
 .history-filter-btn:hover, .history-filter-btn.active { color: var(--ink-900); background: var(--gold-300); border-color: var(--gold-200); }
@@ -2027,6 +2030,7 @@ button.btn-ghost {
 .site-stat-card strong { color: var(--gold-100); font: 700 25px/1 var(--font-mono); }
 .site-stat-card span { color: var(--text-mute); font-size: 12px; }
 .site-stats-note { grid-column: 1 / -1; padding: 0 2px 4px; color: var(--text-mute); font-size: 11px; line-height: 1.6; }
+.site-stats-live-dot { color: #79dc91; margin-right: 4px; }
 .site-stats-breakdown { grid-column: 1 / -1; padding: 14px 16px; border: 1px solid rgba(233,193,120,0.14); border-radius: 13px; background: rgba(255,255,255,0.025); }
 .site-stats-breakdown h3 { margin: 0 0 10px; color: var(--gold-300); font: 600 13px/1.2 var(--font-serif); }
 .site-stats-breakdown div { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; padding: 8px 0; color: var(--text-mute); border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; }

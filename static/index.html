@@ -65,7 +65,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=ai-difficulty-20260830-1">
+  <link rel="stylesheet" href="/css/style.css?v=site-stats-live-20260830-1">
 </head>
 
 <body class="theme-guofeng">
@@ -737,6 +737,7 @@
           discuzLoginUrl: 'https://zwwx.club/discuz-sso/bridge.php',
           // 我的战绩
           myScore: null,
+          siteStats: null,
           // 当前登录用户信息（仅 SSO 自动登录时填充）
           myUser: null,
           topList: [],
@@ -897,6 +898,11 @@
 
           this.client.on('MESSAGE', function (data) {
             layer.msg(data.msg);
+          }.bind(this));
+
+          // 站点统计由服务端实时广播，打开统计弹窗时直接反映最新快照。
+          this.client.on('SITE_STATS_UPDATE', function (data) {
+            this.siteStats = data || null;
           }.bind(this));
 
 
@@ -1774,23 +1780,52 @@
           loadList();
         },
         openSiteStats: function () {
+          var self = this;
           var esc = this.htmlEscape;
-          var html = '<div id="site-stats-panel" class="site-stats-panel"><div class="history-hero"><div><span class="history-eyebrow">雀阁 · 运营数据</span><h2>数据统计</h2><p>累计访问、开局、游玩人次与观战数据。</p></div><button type="button" class="lb-refresh" id="site-stats-refresh">↻ 刷新</button></div><div id="site-stats-grid" class="site-stats-grid"><div class="stats-loading">数据加载中...</div></div></div>';
+          var html = '<div id="site-stats-panel" class="site-stats-panel"><div class="history-hero"><div><span class="history-eyebrow">雀阁 · 运营数据</span><h2>数据统计 <em class="site-stats-live"><i>●</i> 实时</em></h2><p>累计访问、开局、游玩人次与观战数据 · <span id="site-stats-updated">等待同步</span></p></div><button type="button" class="lb-refresh" id="site-stats-refresh">↻ 刷新</button></div><div id="site-stats-grid" class="site-stats-grid"><div class="stats-loading">数据加载中...</div></div></div>';
           var statsWidth = Math.min(760, Math.max(320, Math.floor(window.innerWidth * 0.94)));
           var statsHeight = Math.min(620, Math.max(320, Math.floor(window.innerHeight * 0.72)));
-          var idx = layer.open({ type: 1, title: '数据统计', shadeClose: true, area: [statsWidth + 'px', statsHeight + 'px'], content: html });
-          var grid = document.getElementById('site-stats-grid');
+          var grid = null;
+          var updated = null;
+          var loading = false;
+          var pollTimer = null;
+          var unwatch = null;
+          var cleaned = false;
+          var cleanup = function () {
+            if (cleaned) return;
+            cleaned = true;
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            if (unwatch) { unwatch(); unwatch = null; }
+          };
           var render = function (data) {
+            if (!grid) return;
             data = data || {};
             var quality = data.dataQuality || {};
             var cards = [{ key: 'games', label: '完成战局', icon: '局' }, { key: 'visits', label: '页面访问', icon: '访' }, { key: 'plays', label: '游玩人次', icon: '玩' }, { key: 'game_starts', label: '开局次数', icon: '开' }, { key: 'socket_connections', label: '连接次数', icon: '连' }, { key: 'spectator_visits', label: '观战次数', icon: '观' }];
             var cardsHtml = cards.map(function (card) { return '<article class="site-stat-card"><i>' + card.icon + '</i><strong>' + Number(data[card.key] || 0).toLocaleString() + '</strong><span>' + esc(card.label) + '</span></article>'; }).join('');
             var gameRows = Array.isArray(quality.byGame) ? quality.byGame.map(function (item) { var label = item.gameType === 'mahjong' ? '麻将' : (item.gameType === 'guandan' ? '掼蛋' : '斗地主'); return '<div><b>' + label + '</b><span>玩家局数 ' + Number(item.playerRounds || 0).toLocaleString() + '</span><strong>' + Number(item.completedEstimate || 0).toLocaleString() + ' 局</strong></div>'; }).join('') : '';
-            grid.innerHTML = cardsHtml + (gameRows ? '<section class="site-stats-breakdown"><h3>各玩法数据</h3>' + gameRows + '</section>' : '');
+            var updatedAt = Number(data.updatedAt || 0);
+            if (updated) updated.textContent = updatedAt ? '最后同步 ' + new Date(updatedAt * 1000).toLocaleTimeString() : '实时同步中';
+            grid.innerHTML = cardsHtml + (gameRows ? '<section class="site-stats-breakdown"><h3>各玩法数据</h3>' + gameRows + '</section>' : '') + '<div class="site-stats-note"><span class="site-stats-live-dot">●</span> 服务端实时推送 · 数据变化后自动更新</div>';
           };
-          var load = function () { grid.innerHTML = '<div class="stats-loading">数据加载中...</div>'; fetch('/api/site-stats').then(function (r) { return r.ok ? r.json() : {}; }).then(render).catch(function () { render({}); }); };
-          document.getElementById('site-stats-refresh').onclick = load;
-          load();
+          var load = function (showLoading) {
+            if (loading) return;
+            loading = true;
+            if (showLoading && grid) grid.innerHTML = '<div class="stats-loading">数据加载中...</div>';
+            fetch('/api/site-stats?_=' + Date.now(), { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }).then(function (r) { return r.ok ? r.json() : {}; }).then(render).catch(function () {
+              if (!self.siteStats) render({});
+              if (updated) updated.textContent = '同步失败，等待重试';
+            }).finally(function () { loading = false; });
+          };
+          var idx = layer.open({ type: 1, title: '数据统计', shadeClose: true, area: [statsWidth + 'px', statsHeight + 'px'], content: html, end: cleanup });
+          grid = document.getElementById('site-stats-grid');
+          updated = document.getElementById('site-stats-updated');
+          unwatch = self.$watch('siteStats', function (data) { if (data) render(data); });
+          document.getElementById('site-stats-refresh').onclick = function () { load(true); };
+          // Socket.IO 是主通道；15 秒轮询作为断线/代理缓存场景的兜底。
+          pollTimer = setInterval(function () { load(false); }, 15000);
+          if (self.siteStats) render(self.siteStats);
+          load(!self.siteStats);
         },
         goDiscuzLogin: function () {
           // 跨域桥接：论坛登录 → 生成 JWT → 302 回本页并带 #token=xxx

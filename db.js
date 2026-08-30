@@ -32,9 +32,12 @@ const memoryStats = {
   games_completed: 0,
   player_rounds: 0,
   spectator_visits: 0,
+  updated_at: 0,
 };
 let memoryHistorySeq = 1;
 let memoryStatsMeta = null;
+const siteStatsListeners = new Set();
+let siteStatsNotifyTimer = null;
 
 let pool = null;
 let ready = false;
@@ -372,14 +375,51 @@ function attachStatsMeta(result, meta) {
   return result;
 }
 
+/**
+ * 订阅站点统计变化。返回取消订阅函数，供 Socket.IO 广播层使用。
+ * 统计写入可能在同一事件循环内连续发生，统一合并到一次推送，避免
+ * 页面访问高峰时给每个客户端发送重复快照。
+ */
+function subscribeSiteStats(listener) {
+  if (typeof listener !== 'function') return () => {};
+  siteStatsListeners.add(listener);
+  return () => siteStatsListeners.delete(listener);
+}
+
+function scheduleSiteStatsNotify() {
+  if (!siteStatsListeners.size || siteStatsNotifyTimer) return;
+  siteStatsNotifyTimer = setTimeout(async () => {
+    siteStatsNotifyTimer = null;
+    if (!siteStatsListeners.size) return;
+    let snapshot;
+    try {
+      snapshot = await getSiteStats();
+    } catch (err) {
+      console.error('[db] getSiteStats 实时推送失败：', err && err.message);
+      return;
+    }
+    Array.from(siteStatsListeners).forEach(listener => {
+      try {
+        const result = listener(snapshot);
+        if (result && typeof result.catch === 'function') result.catch(() => {});
+      } catch (err) {}
+    });
+  }, 120);
+  if (siteStatsNotifyTimer.unref) siteStatsNotifyTimer.unref();
+}
+
 async function recordSiteStat(name, amount = 1) {
   if (!STAT_COLUMNS.includes(name)) return;
   const delta = Math.max(0, Math.floor(Number(amount) || 0));
   if (!delta) return;
   memoryStats[name] += delta;
-  if (!isReady()) return;
+  const now = Math.floor(Date.now() / 1000);
+  memoryStats.updated_at = now;
+  if (!isReady()) {
+    scheduleSiteStatsNotify();
+    return;
+  }
   try {
-    const now = Math.floor(Date.now() / 1000);
     await pool.query(
       `INSERT INTO \`${SITE_STATS_TABLE}\` (id, \`${name}\`, updated_at) VALUES (1, ?, ?)
        ON DUPLICATE KEY UPDATE \`${name}\` = \`${name}\` + VALUES(\`${name}\`), updated_at = VALUES(updated_at)`,
@@ -388,6 +428,7 @@ async function recordSiteStat(name, amount = 1) {
   } catch (err) {
     console.error('[db] recordSiteStat 失败：', err && err.message);
   }
+  scheduleSiteStatsNotify();
 }
 
 async function getSiteStats() {
@@ -464,7 +505,9 @@ async function backfillSiteStats(payload = {}) {
     STAT_COLUMNS.forEach(key => {
       memoryStats[key] = Math.max(memoryStats[key], Math.max(0, Math.floor(Number(values[key]) || 0)));
     });
+    memoryStats.updated_at = Math.floor(Date.now() / 1000);
     memoryStatsMeta = metadata;
+    scheduleSiteStatsNotify();
     return attachStatsMeta(statPayload(memoryStats), memoryStatsMeta);
   }
   try {
@@ -498,6 +541,7 @@ async function backfillSiteStats(payload = {}) {
       VALUES (1, 1, ?, ?)
       ON DUPLICATE KEY UPDATE version = VALUES(version), data_quality_json = VALUES(data_quality_json), updated_at = VALUES(updated_at)
     `, [JSON.stringify(Object.assign(metadata, { effectiveValues: merged })), now]);
+    scheduleSiteStatsNotify();
     return attachStatsMeta(statPayload(merged), Object.assign(metadata, { effectiveValues: merged }));
   } catch (err) {
     console.error('[db] backfillSiteStats 失败：', err && err.message);
@@ -508,6 +552,7 @@ async function backfillSiteStats(payload = {}) {
 module.exports = {
   init, close, isReady, recordPlayer, getUserScore, getTopScores,
   saveHistory, listHistory, getHistory, recordSiteStat, getSiteStats,
+  subscribeSiteStats,
   getHistoricalGameStats, backfillSiteStats,
   TABLE, TABLES, HISTORY_TABLE, SITE_STATS_TABLE, SITE_STATS_META_TABLE,
 };
