@@ -65,7 +65,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=spectator-pause-20260826-1">
+  <link rel="stylesheet" href="/css/style.css?v=ai-difficulty-20260830-1">
 </head>
 
 <body class="theme-guofeng">
@@ -181,6 +181,7 @@
             <div class="room-card-meta">
               <span>{{deskBusyCount(desk)}} / {{desk.seatCount || desk.positions.length}} 人</span>
               <span v-if="desk.gameType === 'guandan'">打 {{desk.guandanLevelLabel || '2'}}</span>
+              <span v-if="desk.botCount">AI · {{aiDifficultyText(desk.aiDifficulty)}}</span>
               <span>{{roomStatusText(desk)}}</span>
             </div>
             <div class="seat-strip">
@@ -192,6 +193,7 @@
             <div class="room-card-foot">
               <button type="button" class="btn-ghost" @click="copyRoomCode(desk.roomCode || desk.deskId)">复制房号</button>
               <button type="button" v-if="deskBusyCount(desk) > 0" class="btn-ghost" @click.stop="spectate(desk.deskId)">观战</button>
+              <button type="button" v-if="deskHasBot(desk)" class="btn-bot-takeover" @click.stop="takeoverRandomBot(desk)">顶号 AI</button>
               <button type="button" @click="joinOpenSeat(desk)">入房</button>
             </div>
           </div>
@@ -209,6 +211,15 @@
           <span>房号 {{roomCode || deskId}}</span>
           <span v-if="gameType === 'guandan'">打 {{guandanLevelLabel}}</span>
         </div>
+        <label class="ai-difficulty-control" :class="{locked: aiDifficultyLocked, owner: canEditAiDifficulty}" title="仅房主可调整，开局后自动锁定">
+          <span>AI 难度</span>
+          <select :value="aiDifficulty" @change="setAiDifficulty($event.target.value)" :disabled="!canEditAiDifficulty">
+            <option v-for="item in aiDifficultyOptions" :key="item.value" :value="item.value">{{item.label}}</option>
+          </select>
+          <em v-if="aiDifficultyLocked">本局锁定</em>
+          <em v-else-if="!isRoomOwner && !isSpec">仅房主</em>
+          <em v-else-if="isSpec">只读</em>
+        </label>
         <div class="room-top-actions">
           <span>{{currentRoomPlayers}} / {{gameType === 'doudizhu' ? 3 : 4}} 人</span>
           <button type="button" class="btn-ghost" @click="copyRoomCode(roomCode || deskId)">复制房号</button>
@@ -735,6 +746,12 @@
           deskId: '',//桌号
           roomCode: '',
           roomOwnerName: '',
+          aiDifficulty: 'normal',
+          aiDifficultyOptions: [
+            { value: 'easy', label: '简单' },
+            { value: 'normal', label: '标准' },
+            { value: 'hard', label: '困难' },
+          ],
           gameType: 'doudizhu',
           selectedGameType: 'doudizhu',
           roomCodeInput: '',
@@ -926,6 +943,14 @@
             }
           }.bind(this));
 
+          this.client.on('AI_DIFFICULTY_CHANGE', function (data) {
+            if (!data) return;
+            this.aiDifficulty = data.aiDifficulty || this.aiDifficulty;
+            if (data.changedBy && data.changedBy !== ((this.myUser && this.myUser.username) || this.posState.self.name)) {
+              layer.msg('房主将 AI 难度调整为：' + (data.aiDifficultyLabel || this.aiDifficultyText(data.aiDifficulty)), { time: 1200 });
+            }
+          }.bind(this));
+
           this.client.on('QUICK_JOIN', function (data) {
             if (data.success) {
               this.client.emit('SITDOWN', { deskId: data.deskId, posId: data.posId })
@@ -942,6 +967,7 @@
             this.deskId = data.deskId;
             this.roomCode = data.roomCode || data.deskId;
             this.roomOwnerName = data.ownerName || '';
+            this.aiDifficulty = data.aiDifficulty || 'normal';
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
             this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
@@ -966,6 +992,12 @@
             layer.msg(data.msg);
           }.bind(this));
 
+          this.client.on('AI_DIFFICULTY_ERROR', function (data) {
+            layer.closeAll();
+            if (data && data.aiDifficulty) this.aiDifficulty = data.aiDifficulty;
+            layer.msg((data && data.msg) || 'AI 难度调整失败');
+          }.bind(this));
+
 
           this.client.on('UNSITDOWN_SUCCESS', function (data) {
             this.resetRoomStatus();
@@ -979,6 +1011,7 @@
             this.deskId = data.deskId;
             this.roomCode = data.roomCode || data.deskId;
             this.roomOwnerName = data.ownerName || '';
+            this.aiDifficulty = data.aiDifficulty || 'normal';
             this.gameType = data.gameType || 'doudizhu';
             this.guandanLevelLabel = data.guandanLevelLabel || '2';
             this.guandanLevelRank = data.guandanLevelRank || this.rankFromLabel(this.guandanLevelLabel);
@@ -1070,6 +1103,7 @@
           //游戏开始
           this.client.on('GAME_START', function (data) {
             this.gameType = data.gameType || this.gameType || 'doudizhu';
+            this.aiDifficulty = data.aiDifficulty || this.aiDifficulty || 'normal';
             this.aiSeenCards = [];
             this.mahjong.advice = null;
             this.roomState.state = (this.gameType === 'guandan' || this.gameType === 'mahjong') ? 2 : 1;
@@ -1426,6 +1460,7 @@
           this.roomState.state = Number(data.status || this.roomState.state || 2);
           this.roomState.timeout = Number(data.timeout || 30);
           if (data.gameType) this.gameType = data.gameType;
+          if (data.aiDifficulty) this.aiDifficulty = data.aiDifficulty;
           if (this.gameType === 'mahjong' && data.mahjong) {
             this.initMahjongState(data.mahjong);
             this.roomState.ctxPos = this.getDirectionByPosId(data.mahjong.ctxPos);
@@ -1797,6 +1832,10 @@
           if (gameType === 'mahjong') return '麻将';
           return '斗地主';
         },
+        aiDifficultyText: function (value) {
+          var labels = { easy: '简单', normal: '标准', hard: '困难' };
+          return labels[String(value || 'normal').toLowerCase()] || '标准';
+        },
         rankFromLabel: function (label) {
           if (label === 'J') return 11;
           if (label === 'Q') return 12;
@@ -1824,11 +1863,31 @@
           if (position.isBot) return 'AI';
           return name.slice(0, 1);
         },
+        deskHasBot: function (desk) {
+          if (!desk) return false;
+          if (Number(desk.botCount) > 0) return true;
+          return (desk.positions || []).some(function (position) { return !!position.isBot; });
+        },
         joinOpenSeat: function (desk) {
           if (!desk) return;
           var pos = (desk.positions || []).find(function (p) { return p.state === 0; });
-          if (!pos) return layer.msg('房间已满，可先观战');
+          if (!pos) {
+            if (this.deskHasBot(desk)) return this.takeoverRandomBot(desk);
+            return layer.msg('房间已满，可先观战');
+          }
           this.sitDown(desk.deskId, pos);
+        },
+        takeoverRandomBot: function (desk) {
+          if (!desk || !this.deskHasBot(desk)) return layer.msg('当前没有可接管的 AI');
+          layer.load({ type: 3 });
+          this.client.emit('TAKEOVER_BOT', { deskId: desk.deskId });
+        },
+        setAiDifficulty: function (value) {
+          if (!this.canEditAiDifficulty) {
+            return layer.msg(this.aiDifficultyLocked ? '本局已开始，AI 难度已锁定' : '只有房主可以调整 AI 难度');
+          }
+          this.client.emit('SET_AI_DIFFICULTY', { difficulty: value });
+          window.FX && FX.beep('chip');
         },
         copyRoomCode: function (code) {
           code = String(code || '');
@@ -2160,10 +2219,11 @@
 
         },
         sitDown: function (deskId, pos) {
+          if (!pos) return;
+          if (pos.isBot) return this.takeoverRandomBot({ deskId: deskId, botCount: 1 });
           if (pos.state === 0) {
             layer.load({ type: 3 });
             this.client.emit('SITDOWN', { deskId: deskId, posId: pos.posId });
-
           }
         },
         exitRoom: function () {
@@ -2181,6 +2241,7 @@
           this.deskId = '';
           this.roomCode = '';
           this.roomOwnerName = '';
+          this.aiDifficulty = 'normal';
           this.isSpec = false;
           this.gameType = 'doudizhu';
           this.posState.self.state = 0;
@@ -2483,6 +2544,7 @@
         applySpectateSnapshot: function (snap) {
           if (!snap) return;
           if (snap.gameType) this.gameType = snap.gameType;
+          if (snap.aiDifficulty) this.aiDifficulty = snap.aiDifficulty;
           if (snap.levelLabel) this.guandanLevelLabel = snap.levelLabel;
           if (snap.levelRank) this.guandanLevelRank = snap.levelRank;
           // 1) 手牌（仅渲染左/右位置，self 在观战模式不显示）
@@ -2491,7 +2553,8 @@
             this.initMahjongState(snap.mahjong);
             this.roomState.ctxPos = this.getDirectionByPosId(snap.mahjong.ctxPos);
             this.roomState.state = 2;
-            this.roomState.timeout = 30;
+            this.roomState.timeout = Number(snap.timeout || 30);
+            if (!this.roomState.paused) this.startTimer(this.isSpec ? false : this.autoPlayCards.bind(this));
             return;
           }
           // 2) 叫分历史
@@ -2525,6 +2588,8 @@
               this.roomState.ctxCard.ctxPos = this.getDirectionByPosId(snap.lastCardInfo.posId);
             }
           }
+          this.roomState.timeout = Number(snap.timeout || (this.gameType === 'guandan' ? 45 : (this.roomState.state === 2 ? 30 : 15)));
+          if (!this.roomState.paused) this.startTimer(this.isSpec ? false : this.autoPlayCards.bind(this));
         },
 
         sendMessage: function (e) {
@@ -2728,6 +2793,16 @@
         },
         pauseSeconds: function () {
           return Math.max(0, Math.ceil(Number(this.roomState.pauseRemainingMs || 0) / 1000));
+        },
+        isRoomOwner: function () {
+          var currentName = (this.myUser && this.myUser.username) || (!this.isSpec && this.posState.self.name) || '';
+          return !!currentName && !!this.roomOwnerName && currentName === this.roomOwnerName;
+        },
+        aiDifficultyLocked: function () {
+          return this.roomState.state > 0 && this.roomState.state < 3;
+        },
+        canEditAiDifficulty: function () {
+          return !this.isSpec && this.isRoomOwner && !this.aiDifficultyLocked;
         },
         canCallPauseAI: function () {
           if (this.isSpec || !this.roomState.paused || !this.roomOwnerName) return false;

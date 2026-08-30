@@ -676,7 +676,7 @@ button.btn-ghost {
   position: relative;
   z-index: 3;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 .room-card-foot button {
@@ -739,6 +739,7 @@ button.btn-ghost {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 7px 10px 7px 16px;
   color: var(--gold-300);
@@ -773,6 +774,68 @@ button.btn-ghost {
   padding: 0 10px;
   font-size: 12px;
   letter-spacing: 0.08em;
+}
+.ai-difficulty-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-height: 30px;
+  padding: 3px 7px 3px 10px;
+  color: var(--gold-200);
+  background: rgba(22, 62, 52, 0.68);
+  border: 1px solid rgba(212,168,90,0.34);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.ai-difficulty-control > span {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.ai-difficulty-control select {
+  min-width: 60px;
+  height: 26px;
+  padding: 0 19px 0 7px;
+  color: var(--ink-900);
+  background: var(--grad-gold-shine);
+  border: 1px solid rgba(255,238,184,0.75);
+  border-radius: 999px;
+  font-family: var(--font-serif);
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+}
+.ai-difficulty-control select:disabled {
+  color: var(--text-soft);
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.18);
+  cursor: not-allowed;
+  opacity: 0.9;
+}
+.ai-difficulty-control em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--text-mute);
+}
+.ai-difficulty-control.owner {
+  border-color: rgba(233,193,120,0.78);
+  box-shadow: 0 0 14px rgba(212,168,90,0.14);
+}
+.ai-difficulty-control.locked {
+  background: rgba(10, 30, 27, 0.82);
+  border-color: rgba(141,213,196,0.42);
+}
+.btn-bot-takeover {
+  color: #f6e6c8;
+  background: linear-gradient(135deg, #527f73, #28564a);
+  border: 1px solid rgba(141,213,196,0.68);
+  box-shadow: 0 3px 10px rgba(24,74,60,0.28);
+}
+.btn-bot-takeover:hover {
+  background: linear-gradient(135deg, #6b9d8e, #356c5d);
+  transform: translateY(-1px);
 }
 .rules-panel {
   padding: 18px 20px;
@@ -2460,6 +2523,9 @@ button.btn-ghost {
   .room-top-actions {
     justify-content: center;
     flex-wrap: wrap;
+  }
+  .ai-difficulty-control {
+    align-self: center;
   }
   .card-group-left  { left: var(--table-left-safe); }
   .card-group-right { right: var(--table-right-safe); }

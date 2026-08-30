@@ -4,6 +4,7 @@ const GuandanGame = require('../guandan-game');
 const MahjongGame = require('../mahjong-game');
 const SmartAI = require('../static/js/smart-ai').SmartAI;
 const MahjongAI = require('../static/js/mahjong-ai').MahjongAI;
+const AiDifficulty = require('../ai-difficulty');
 
 function card(value, type, deck) {
   return { value, type: type || 0, deck };
@@ -145,7 +146,46 @@ function simulateMahjong(rounds) {
   }
 }
 
+function testDifficultyAdapters() {
+  ['easy', 'normal', 'hard'].forEach(function (difficulty) {
+    const ddz = new Game().start();
+    ddz.next(ddz.getContextPosId(), 3); // 进入出牌阶段，让规则引擎具备当前牌权。
+    const pos = Number(ddz.getContextPosId());
+    const hand = ddz.getCardsByPosId(pos);
+    const picks = AiDifficulty.doudizhuSuggest(hand, { len: 0, ctxPos: 'self' }, { difficulty: difficulty });
+    assert(picks.length, '斗地主 ' + difficulty + ' 档获得牌权时应给出出牌');
+    assert(ddz.validate(pos, picks).status, '斗地主 ' + difficulty + ' 档出牌必须合法');
+  });
+
+  ['easy', 'normal', 'hard'].forEach(function (difficulty) {
+    const guandan = new GuandanGame().start();
+    const pos = Number(guandan.getContextPosId());
+    const hand = guandan.getCardsByPosId(pos);
+    const picks = AiDifficulty.guandanSuggest(hand, { len: 0, ctxPos: 'self' }, {
+      difficulty: difficulty,
+      levelRank: guandan.levelRank,
+    });
+    assert(picks.length, '掼蛋 ' + difficulty + ' 档获得牌权时应给出出牌');
+    assert(guandan.validate(pos, picks).status, '掼蛋 ' + difficulty + ' 档出牌必须合法');
+  });
+
+  const mahjong = new MahjongGame().start();
+  const mahjongPos = Number(mahjong.getContextPosId());
+  const mahjongAdvice = MahjongAI.suggestDiscard(mahjong.getCardsByPosId(mahjongPos), {
+    difficulty: 'hard',
+    wallCount: mahjong.getWallCount(),
+    discards: mahjong.getDiscards(),
+    melds: mahjong.getMelds(),
+    selfPos: mahjongPos,
+  });
+  assert(mahjongAdvice.card, '麻将困难档应返回具体弃牌');
+  assert(mahjong.getCardsByPosId(mahjongPos).some(function (tile) {
+    return Number(tile.value) === Number(mahjongAdvice.card.value);
+  }), '麻将困难档建议的牌必须来自手牌');
+}
+
 testMahjongAnalysis();
+testDifficultyAdapters();
 simulateDoudizhu(3);
 simulateGuandan(2);
 simulateMahjong(3);

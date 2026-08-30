@@ -249,7 +249,11 @@
       var effective = effectiveTiles(next, openMelds, remaining);
       var danger = tileDanger(value, options, visibleCounts);
       var keepShape = shapePenalty(value, counts);
-      var score = shanten * 125 - effective.total * 3.2 + keepShape * 5 + danger * (3 + late * 13);
+      var difficulty = options.difficulty || 'normal';
+      var efficiencyWeight = difficulty === 'hard' ? 3.8 : 3.2;
+      var defenseWeight = difficulty === 'hard' ? (11 + late * 22) : (difficulty === 'easy' ? 0 : (3 + late * 13));
+      var score = shanten * 125 - effective.total * efficiencyWeight + keepShape * 5 + danger * defenseWeight;
+      if (difficulty === 'hard' && value >= 27 && counts[value] === 1) score += 4;
       if (value >= 27 && counts[value] === 1 && visibleCounts[value] >= 2) score -= 10;
       if (value < 27 && (rank(value) === 0 || rank(value) === 8) && keepShape < 0.8) score -= 3;
       candidates.push({
@@ -288,7 +292,46 @@
     return '打 ' + best.label + ' 后为 ' + shantenLabel(best.shanten) + '，' + waits.length + ' 种进张约 ' + best.ukeire + ' 张';
   }
 
+  // 简单档只做基础牌面判断：优先丢单张字牌/边张，再考虑孤张高牌，
+  // 尽量保留对子和相邻牌。它与标准/困难档的向听、牌效、牌河防守计算分开。
+  function suggestEasyDiscard(hand, options) {
+    options = options || {};
+    var cards = (hand || []).map(cloneTile);
+    if (!cards.length) return { action: 'pass', card: null, shanten: 99, ukeire: 0, effectiveTiles: [], danger: 0, reason: '手牌为空', alternatives: [] };
+    var counts = countsFor(cards);
+    var candidates = cards.map(function (card, index) {
+      var value = card.value;
+      var tileRank = rank(value);
+      var badness = value >= 27 ? 100 : (tileRank === 0 || tileRank === 8 ? 72 : (50 - Math.abs(tileRank - 4) * 3));
+      if (counts[value] >= 2) badness -= 48;
+      if (value < 27) {
+        if (tileRank > 0 && counts[value - 1]) badness -= 18;
+        if (tileRank < 8 && counts[value + 1]) badness -= 18;
+        if (tileRank > 1 && counts[value - 2]) badness -= 7;
+        if (tileRank < 7 && counts[value + 2]) badness -= 7;
+      }
+      return { card: card, index: index, value: value, score: badness };
+    });
+    candidates.sort(function (a, b) { return b.score - a.score || a.value - b.value; });
+    var best = candidates[0];
+    var after = cards.filter(function (card, index) { return index !== best.index; });
+    var remaining = remainingCounts(after, options);
+    var effective = effectiveTiles(after, Number(options.openMelds) || 0, remaining);
+    return {
+      action: 'discard',
+      card: cloneTile(best.card),
+      shanten: calculateShanten(after, Number(options.openMelds) || 0),
+      ukeire: effective.total,
+      effectiveTiles: effective.values,
+      danger: 0,
+      reason: '基础牌效：优先处理孤张 ' + TILE_LABELS[best.value],
+      alternatives: candidates.slice(1, 3).map(function (item) { return { card: cloneTile(item.card), label: TILE_LABELS[item.value], score: item.score }; })
+    };
+  }
+
   function suggestDiscard(hand, options) {
+    options = options || {};
+    if (options.difficulty === 'easy') return suggestEasyDiscard(hand, options);
     var candidates = analyzeDiscards(hand, options);
     var best = candidates[0] || null;
     return {
@@ -340,6 +383,10 @@
     actions = actions || [];
     if (actions.indexOf('hu') >= 0) return { action: 'hu', reason: '已满足和牌条件，立即胡牌' };
 
+    if (options.difficulty === 'easy') {
+      return { action: 'pass', shanten: calculateShanten(hand, Number(options.openMelds) || 0), ukeire: 0, score: 0, reason: '简单档保留门前牌型' };
+    }
+
     var baseline = baseEfficiency(hand, options);
     var openMelds = Number(options.openMelds) || 0;
     var choices = [{ action: 'pass', shanten: baseline.shanten, ukeire: baseline.ukeire, score: baseline.shanten * 120 - baseline.ukeire * 2.5, reason: '保持门前牌效' }];
@@ -379,13 +426,14 @@
 
   function shouldConcealedGang(hand, options) {
     options = options || {};
+    if (options.difficulty === 'easy') return { action: 'pass', reason: '简单档不主动暗杠' };
     var counts = countsFor(hand);
     var value = counts.findIndex(function (n) { return n === 4; });
     if (value < 0) return { action: 'pass', reason: '没有可暗杠的牌' };
     var before = calculateShanten(hand, Number(options.openMelds) || 0);
     var afterHand = removeValues(hand, [value, value, value, value]);
     var after = calculateShanten(afterHand, (Number(options.openMelds) || 0) + 1);
-    var safe = after <= before && Number(options.wallCount == null ? 83 : options.wallCount) > 8;
+    var safe = after <= before && Number(options.wallCount == null ? 83 : options.wallCount) > (options.difficulty === 'hard' ? 4 : 8);
     return { action: safe ? 'gang' : 'pass', card: { value: value, type: 0 }, reason: safe ? '暗杠不增加向听并获得补张' : '暗杠会破坏当前牌效，建议保留', shanten: after };
   }
 

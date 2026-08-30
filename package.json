@@ -9,8 +9,9 @@
     "test:ai": "node test/ai.test.js",
     "test:history": "node test/history.test.js",
     "test:spectator-ui": "node test/spectator-ui.test.js",
+    "test:room-controls": "node test/room-controls.test.js",
     "stats:backfill": "node scripts/backfill-site-stats.js",
-    "test": "npm run test:ai && npm run test:history && npm run test:spectator-ui"
+    "test": "npm run test:ai && npm run test:history && npm run test:spectator-ui && npm run test:room-controls"
   },
   "author": "TypeThe0ry",
   "license": "MIT",

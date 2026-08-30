@@ -238,6 +238,14 @@
     if (leadMode && Number(options.opponentMinCardCount || 99) <= 1 && candidate.ret.type === 'A') score += 45;
     if (leadMode && Number(options.partnerCardCount || 99) === 1 && candidate.ret.type === 'A') score -= 26;
     if (!leadMode && Number(options.opponentMinCardCount || 99) <= 2) score -= candidate.cards.length * 3;
+    // 困难档增加一层“出牌后牌力”评估：不只看眼前少几张，还要尽量留下
+    // 可组织、可控场的结构。默认/标准档完全保留原有评分。
+    if (options.difficulty === 'hard') {
+      var remainingPower = evaluateDoudizhuHand(remaining, options);
+      score += (42 - remainingPower) * 0.9;
+      if (!leadMode && Number(options.opponentMinCardCount || 99) <= 2 && candidate.ret.bomb) score -= 22;
+      if (leadMode && candidate.ret.bomb && Number(options.opponentMinCardCount || 99) > 2) score += 16;
+    }
     return score;
   }
 
@@ -356,6 +364,14 @@
       if (leadMode) score -= candidate.cards.length * 4;
       if (leadMode && Number(options.teammateCardCount || 99) === 1 && candidate.ret.type === 'SINGLE') score -= 35;
       if (leadMode && Number(options.opponentMinCardCount || 99) === 1 && candidate.ret.type === 'SINGLE') score += 48;
+      // 困难档会根据残局压力决定是否保留/启用炸弹，并进一步偏向
+      // 能让队友接力的低成本牌型。
+      if (options.difficulty === 'hard') {
+        var opponentMin = Number(options.opponentMinCardCount || 99);
+        if (candidate.ret.bomb && opponentMin <= 2) score -= 28;
+        if (candidate.ret.bomb && opponentMin > 3) score += 22;
+        if (Number(options.teammateCardCount || 99) === 1 && candidate.ret.type === 'SINGLE') score -= 12;
+      }
       candidate.score = score;
     });
     candidates.sort(function (a, b) {

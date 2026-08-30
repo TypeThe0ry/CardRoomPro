@@ -66,6 +66,7 @@ const AISuggest = require('./static/js/ai-suggest.js').AISuggest;
 const GuandanSuggest = require('./static/js/guandan-suggest.js').GuandanSuggest;
 const SmartAI = require('./static/js/smart-ai.js').SmartAI;
 const MahjongAI = require('./static/js/mahjong-ai.js').MahjongAI;
+const AiDifficulty = require('./ai-difficulty.js');
 const db = require('./db.js');
 
 // 底分（每分对应多少积分）。可通过环境变量调整。
@@ -473,6 +474,7 @@ const proto = {
       seatCount: meta.seats,
       isPrivate: !!options.isPrivate,
       ownerName: options.ownerName || '',
+      aiDifficulty: AiDifficulty.normalizeAiDifficulty(options.aiDifficulty),
       pauseInfo: null,
       createdAt: Date.now(),
       positions: createPositions(meta.seats),
@@ -496,6 +498,9 @@ const proto = {
         seatCount: room.seatCount,
         isPrivate: room.isPrivate,
         ownerName: room.ownerName,
+        aiDifficulty: room.aiDifficulty,
+        aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
+        botCount: room.positions.filter(pos => pos.isBot).length,
         paused: !!room.pauseInfo,
         pauseExpiresAt: room.pauseInfo ? room.pauseInfo.expiresAt : 0,
         guandanLevelLabel: room.guandanLevelLabel,
@@ -516,13 +521,19 @@ const proto = {
     if (!room) return null;
     return room.positions.find(pos => pos.state === 0 && !pos.pendingSocketId) || null;
   },
+  getRandomBotPos(room) {
+    if (!room) return null;
+    const bots = room.positions.filter(pos => pos.isBot && !pos.pendingSocketId);
+    if (!bots.length) return null;
+    return bots[Math.floor(Math.random() * bots.length)];
+  },
   reservePosition(room, posId, socket) {
     if (!room || !socket) return;
     const pos = this.getPosition(room, posId);
-    if (!pos || pos.state !== 0) return;
+    if (!pos || (pos.state !== 0 && !pos.isBot) || pos.pendingSocketId) return;
     pos.pendingSocketId = socket.id;
     setTimeout(() => {
-      if (pos.pendingSocketId === socket.id && pos.state === 0) {
+      if (pos.pendingSocketId === socket.id && (pos.state === 0 || pos.isBot)) {
         pos.pendingSocketId = '';
       }
     }, 5000);
@@ -720,6 +731,8 @@ const proto = {
       gameType: room.gameType,
       gameLabel: room.gameLabel,
       isPrivate: !!room.isPrivate,
+      aiDifficulty: room.aiDifficulty,
+      aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
       startedAt: Date.now(),
       endedAt: 0,
       players,
@@ -776,6 +789,8 @@ const proto = {
       this.broadCastRoom('GAME_START', deskId, {
         cards,
         gameType: room.gameType,
+        aiDifficulty: room.aiDifficulty,
+        aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
         ctxPos: game.getContextPosId(),
         levelLabel: game.getLevelLabel(),
         levelRank: game.levelRank,
@@ -792,13 +807,20 @@ const proto = {
       this.broadCastRoom('GAME_START', deskId, {
         cards,
         gameType: room.gameType,
+        aiDifficulty: room.aiDifficulty,
+        aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
         ctxPos: game.getContextPosId(),
         mahjong: game.getPublicState(),
       });
       this.broadcastMahjongState(deskId, { timeout: MAHJONG_PLAY_TIMEOUT });
       this.scheduleBotAction(deskId);
     } else {
-      this.broadCastRoom('GAME_START', deskId, { cards, gameType: room.gameType });
+      this.broadCastRoom('GAME_START', deskId, {
+        cards,
+        gameType: room.gameType,
+        aiDifficulty: room.aiDifficulty,
+        aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
+      });
       this.broadCastRoom('CTX_USER_CHANGE', deskId, { ctxPos: game.getContextPosId(), ctxScore: game.getContextScore(), timeout: DOU_DIZHU_STEP_TIMEOUT });
       this.scheduleBotAction(deskId);
     }
@@ -924,6 +946,9 @@ const proto = {
     const snapshot = {
       status,
       gameType: desk.gameType,
+      timeout: this.getGameTimeout(desk, game),
+      aiDifficulty: desk.aiDifficulty,
+      aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
       levelLabel: desk.guandanLevelLabel,
       levelRank: desk.guandanLevelRank,
       cards: handGroups,
@@ -942,6 +967,21 @@ const proto = {
     }
     return snapshot;
   },
+  getPlayerGameSnapshot(deskId, posId) {
+    const desk = this.getDesk(deskId);
+    const snapshot = this.getGameSnapshot(deskId);
+    if (!desk || !snapshot) return snapshot;
+    const ownPosId = Number(posId);
+    snapshot.cards = (snapshot.cards || []).map(group => {
+      if (Number(group.id) === ownPosId) return group;
+      return Object.assign({}, group, {
+        // 新接管的真人只拿到自己的手牌；其他座位只同步张数，避免
+        // 顶号时把未公开手牌发到浏览器端。
+        cards: (group.cards || []).map(() => ({ value: 0, type: 0, hidden: true })),
+      });
+    });
+    return snapshot;
+  },
   getPausePayload(room) {
     if (!room || !room.pauseInfo) return null;
     return {
@@ -957,6 +997,8 @@ const proto = {
     if (!room || !game) return null;
     const payload = {
       gameType: room.gameType,
+      aiDifficulty: room.aiDifficulty,
+      aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
       status: game.getStatus ? game.getStatus() : 0,
       ctxPos: game.getContextPosId ? game.getContextPosId() : '',
       ctxScore: game.getContextScore ? game.getContextScore() : [],
@@ -1119,7 +1161,7 @@ const proto = {
     }
     const posId = game.getContextPosId();
     if (!this.isBotPos(deskId, posId)) return;
-    const delay = 900 + Math.floor(Math.random() * 1100);
+    const delay = AiDifficulty.reactionDelay(room.aiDifficulty);
     this.botTimers[deskId] = setTimeout(() => {
       this.botTimers[deskId] = null;
       if (!this.isBotPos(deskId, posId)) return;
@@ -1150,7 +1192,7 @@ const proto = {
     this.botTimers[deskId] = setTimeout(() => {
       this.botTimers[deskId] = null;
       this.botPlayMahjong(deskId, botPos);
-    }, 700 + Math.floor(Math.random() * 700));
+    }, AiDifficulty.reactionDelay(room.aiDifficulty));
   },
   botPlayMahjong(deskId, posId) {
     const room = this.getDesk(deskId);
@@ -1159,6 +1201,7 @@ const proto = {
     const pending = game.getPendingClaim && game.getPendingClaim();
     const publicState = game.getPublicState();
     const aiOptions = {
+      difficulty: room.aiDifficulty,
       openMelds: (publicState.melds[posId] || []).length,
       discards: publicState.discards,
       melds: publicState.melds,
@@ -1234,7 +1277,7 @@ const proto = {
     if (!game) return;
     const ctxScore = game.getContextScore() || [];
     const hand = game.getCardsByPosId(posId) || [];
-    const bid = SmartAI.doudizhu.recommendBid(hand, ctxScore);
+    const bid = AiDifficulty.doudizhuBid(hand, ctxScore, this.getDesk(deskId) && this.getDesk(deskId).aiDifficulty);
     const score = bid.score;
     const status = game.next(posId, score).getStatus();
     this.recordRoundMove(deskId, { type: 'call', posId: Number(posId), score: Number(score), source: 'ai' });
@@ -1264,8 +1307,9 @@ const proto = {
   },
   botPlayCard(deskId, posId) {
     if (this.isGamePaused(deskId)) return;
+    const room = this.getDesk(deskId);
     const game = this.gameDatas[deskId];
-    if (!game) return;
+    if (!room || !game) return;
     const handRaw = (game.getCardsByPosId(posId) || []).slice(0);
     const hand = handRaw.map(c => ({ value: c.value, type: c.type }));
     const last = game.lastCardInfo || {};
@@ -1280,6 +1324,7 @@ const proto = {
     const opponentMinCardCount = opponentIds.reduce((min, id) => Math.min(min, (game.getCardsByPosId(id) || []).length || 99), 99);
     const partnerId = selfIsLandlord ? -1 : [0, 1, 2].find(id => id !== Number(posId) && id !== landlordId);
     const aiOptions = {
+      difficulty: room.aiDifficulty,
       role: selfIsLandlord ? 'landlord' : 'farmer',
       lastIsPartner,
       opponentMinCardCount,
@@ -1292,7 +1337,7 @@ const proto = {
     if (allOut && allOut.status) {
       picks = handRaw.map(c => ({ value: c.value, type: c.type }));
     } else {
-      try { picks = SmartAI.doudizhu.suggest(hand, lastInfo, aiOptions) || []; } catch (e) { picks = AISuggest.suggest(hand, lastInfo) || []; }
+      try { picks = AiDifficulty.doudizhuSuggest(hand, lastInfo, aiOptions) || []; } catch (e) { picks = AISuggest.suggest(hand, lastInfo) || []; }
     }
     // 解析为真实牌实例（按下标占用避免重复）
     const used = new Set();
@@ -1353,7 +1398,7 @@ const proto = {
     }, 99);
     let data = [];
     try {
-      data = SmartAI.guandan.suggest(handRaw, lead ? { len: 0, ctxPos: 'self' } : {
+      data = AiDifficulty.guandanSuggest(handRaw, lead ? { len: 0, ctxPos: 'self' } : {
         len: last.len,
         key: last.key,
         type: last.type,
@@ -1361,6 +1406,7 @@ const proto = {
         bombPower: last.bombPower || 0,
         ctxPos: 'other',
       }, {
+        difficulty: room.aiDifficulty,
         levelRank: game.levelRank,
         lastIsPartner: !lead && Number(last.posId) % 2 === Number(posId) % 2,
         teammateCardCount: (game.getCardsByPosId(teammateId) || []).length,
@@ -1509,6 +1555,8 @@ const proto = {
           roomCode: room.roomCode,
           gameType: room.gameType,
           isPrivate: room.isPrivate,
+          aiDifficulty: room.aiDifficulty,
+          aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(room.aiDifficulty),
         });
         this.reservePosition(room, 0, socket);
         socket.emit('QUICK_JOIN', { deskId: room.deskId, posId: 0, success: true });
@@ -1523,12 +1571,41 @@ const proto = {
           return;
         }
         const pos = this.getFirstOpenPos(room);
-        if (!pos) {
+        const botPos = pos ? null : this.getRandomBotPos(room);
+        if (!pos && !botPos) {
           socket.emit('SITDOWN_ERROR', { msg: '房间已满' });
           return;
         }
-        this.reservePosition(room, pos.posId, socket);
-        socket.emit('QUICK_JOIN', { deskId: room.deskId, posId: pos.posId, success: true });
+        const target = pos || botPos;
+        this.reservePosition(room, target.posId, socket);
+        socket.emit('QUICK_JOIN', { deskId: room.deskId, posId: target.posId, success: true, takeoverBot: !!botPos });
+      });
+
+      // 真人接管 AI：服务端随机挑选一个未被其他人预占的 AI 座位，避免客户端
+      // 自己指定座位造成抢占竞态；SITDOWN 仍会再次校验 pendingSocketId。
+      socket.on('TAKEOVER_BOT', data => {
+        const client = this.getClient(socket);
+        if (!client || client.deskId) {
+          socket.emit('SITDOWN_ERROR', { msg: '请先退出当前房间' });
+          return;
+        }
+        const room = this.getDesk(data && data.deskId);
+        if (!room) {
+          socket.emit('SITDOWN_ERROR', { msg: '房间不存在' });
+          return;
+        }
+        const botPos = this.getRandomBotPos(room);
+        if (!botPos) {
+          socket.emit('SITDOWN_ERROR', { msg: '当前没有可接管的 AI' });
+          return;
+        }
+        this.reservePosition(room, botPos.posId, socket);
+        socket.emit('QUICK_JOIN', {
+          deskId: room.deskId,
+          posId: botPos.posId,
+          success: true,
+          takeoverBot: true,
+        });
       });
 
       //快速加入
@@ -1539,7 +1616,8 @@ const proto = {
           let n = 0;
           let item = {
             deskId: desk.deskId,
-            positions: []
+            positions: [],
+            botPositions: [],
           };
           const positions = desk.positions;
           positions.forEach(pos => {
@@ -1549,12 +1627,18 @@ const proto = {
               item.positions.push(pos.posId)
             }
           });
-          if (item.positions.length > 0) {
+          // AI 处于 state=2，单独收集，只有真人没有空座时才作为接管候选。
+          desk.positions.forEach(pos => {
+            if (pos.isBot && !pos.pendingSocketId) item.botPositions.push(pos.posId);
+          });
+          if (item.positions.length > 0 || item.botPositions.length > 0) {
             ret.push(item);
           }
         });
         ret = ret.sort((a, b) => {
-          return a.positions.length - b.positions.length;
+          const aHasOpen = a.positions.length > 0 ? 0 : 1;
+          const bHasOpen = b.positions.length > 0 ? 0 : 1;
+          return aHasOpen - bHasOpen || (b.positions.length + b.botPositions.length) - (a.positions.length + a.botPositions.length);
         });
         let matched = ret.length ? ret[0] : false;
         if (!matched) {
@@ -1564,13 +1648,18 @@ const proto = {
             ownerName: this.getUserName(socket),
           });
           this.refreshLobby();
-          matched = { deskId: room.deskId, positions: [0] };
+          matched = { deskId: room.deskId, positions: [0], botPositions: [] };
         }
-        if (matched && matched.positions && matched.positions.length) {
+        const targetPosId = matched && matched.positions && matched.positions.length
+          ? matched.positions[0]
+          : (matched && matched.botPositions && matched.botPositions.length ? matched.botPositions[0] : null);
+        if (matched && targetPosId != null) {
           const room = this.getDesk(matched.deskId);
-          this.reservePosition(room, matched.positions[0], socket);
+          this.reservePosition(room, targetPosId, socket);
         }
-        const payload = matched ? { deskId: matched.deskId, posId: matched.positions[0], success: true } : { success: false }
+        const payload = matched && targetPosId != null
+          ? { deskId: matched.deskId, posId: targetPosId, success: true, takeoverBot: !(matched.positions && matched.positions.length) }
+          : { success: false }
         socket.emit('QUICK_JOIN', payload)
 
       });
@@ -1587,7 +1676,8 @@ const proto = {
         const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
         const pausedForPosition = !!(desk && desk.pauseInfo && Number(desk.pauseInfo.posId) === Number(posId));
         const reservedForMe = pos && (!pos.pendingSocketId || pos.pendingSocketId === socket.id);
-        const canTake = pos && ((pos.state === 0 && reservedForMe) || (pos.isBot && !inProgress));
+        const takingBot = !!(pos && pos.isBot);
+        const canTake = pos && ((pos.state === 0 && reservedForMe) || (takingBot && reservedForMe));
         if (canTake) {
           pos.pendingSocketId = '';
           if (pos.isBot) {
@@ -1614,8 +1704,11 @@ const proto = {
             guandanLevelLabel: desk.guandanLevelLabel,
             guandanLevelRank: desk.guandanLevelRank,
             ownerName: desk.ownerName,
+            aiDifficulty: desk.aiDifficulty,
+            aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+            takeoverBot: takingBot,
             gameInProgress: inProgress,
-            snapshot: inProgress ? this.getGameSnapshot(deskId) : null,
+            snapshot: inProgress ? this.getPlayerGameSnapshot(deskId, posId) : null,
             paused: this.getPausePayload(desk),
             positions: desk.positions,
             posInfos
@@ -1625,7 +1718,7 @@ const proto = {
           this.refreshLobby();
 
           //通知在房间里的其它客户端，更新座位息
-          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 1, userName: this.getUserName(socket), avatarUrl }, socket);
+          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 1, userName: this.getUserName(socket), avatarUrl, isBot: false }, socket);
 
           //推送一条无关紧要的消息
           socket.emit('USER_MESSAGE', { type: 'SYS', posId, msg: '欢迎您加入本房间，祝您游戏愉快！', id: guid(), time: time() });
@@ -2003,6 +2096,8 @@ const proto = {
           gameLabel: desk.gameLabel,
           seatCount: desk.seatCount,
           ownerName: desk.ownerName,
+          aiDifficulty: desk.aiDifficulty,
+          aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
           guandanLevelLabel: desk.guandanLevelLabel,
           guandanLevelRank: desk.guandanLevelRank,
           positions: desk.positions,
@@ -2025,6 +2120,51 @@ const proto = {
         socket.emit('UNSITDOWN_SUCCESS', this.getLobbyRooms());
         const userName = this.getUserName(socket) || '观众';
         this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName}]离开房间`, id: guid(), time: time() }, socket);
+      });
+
+      // AI 难度是房间级规则：只有房主能改，且一旦本局进入叫分/出牌状态就锁定。
+      socket.on('SET_AI_DIFFICULTY', data => {
+        const client = this.getClient(socket);
+        const desk = client && client.deskId ? this.getDesk(client.deskId) : null;
+        if (!client || !desk || client.posId === 'spec') {
+          socket.emit('AI_DIFFICULTY_ERROR', { code: 'NOT_IN_ROOM', msg: '请先入座后再调整 AI 难度' });
+          return;
+        }
+        if (!this.isRoomOwner(socket, desk)) {
+          socket.emit('AI_DIFFICULTY_ERROR', {
+            code: 'OWNER_ONLY',
+            msg: '只有房主可以调整 AI 难度',
+            aiDifficulty: desk.aiDifficulty,
+            aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+          });
+          return;
+        }
+        const game = this.gameDatas[desk.deskId];
+        const gameStatus = game && game.getStatus ? game.getStatus() : 0;
+        if (gameStatus > 0 && gameStatus < 3) {
+          socket.emit('AI_DIFFICULTY_ERROR', {
+            code: 'GAME_STARTED',
+            msg: '本局已开始，AI 难度不能中途调整',
+            aiDifficulty: desk.aiDifficulty,
+            aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+          });
+          return;
+        }
+        const requested = String(!data || data.difficulty == null ? '' : data.difficulty).trim().toLowerCase();
+        const allowed = ['easy', 'normal', 'hard', 'low', 'high', '1', '2', '3', '简单', '标准', '困难'];
+        if (allowed.indexOf(requested) < 0) {
+          socket.emit('AI_DIFFICULTY_ERROR', { code: 'INVALID_DIFFICULTY', msg: 'AI 难度参数无效' });
+          return;
+        }
+        desk.aiDifficulty = AiDifficulty.normalizeAiDifficulty(requested);
+        const payload = {
+          deskId: desk.deskId,
+          aiDifficulty: desk.aiDifficulty,
+          aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+          changedBy: this.getUserName(socket),
+        };
+        this.broadCastRoom('AI_DIFFICULTY_CHANGE', desk.deskId, payload);
+        this.refreshLobby();
       });
 
       // 召唤 AI 对手：把所有空位填满 AI
@@ -2094,7 +2234,7 @@ const proto = {
     // 只接受本机 Nginx 反代，隐藏旧的公网 IP:8002 直连入口。
     http.listen(this.port, '127.0.0.1', () => {
       console.log(`server is running on port ${this.port}`);
-      (require('os').platform() == 'win32') && require('child_process').exec(`start http://localhost:${this.port}/index.html`);
+      (require('os').platform() == 'win32' && process.env.NODE_ENV !== 'test') && require('child_process').exec(`start http://localhost:${this.port}/index.html`);
     });
   }
 }
