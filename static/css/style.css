@@ -470,8 +470,15 @@ button.btn-ghost {
   letter-spacing: 0.22em;
 }
 .quick-bar.text-right { justify-content: space-between; } /* 兼容旧类 */
-.quick-bar > button { margin-left: 10px; }
-.quick-bar > button + button { margin-left: 10px; }
+.quick-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+.quick-actions > button { margin-left: 0; }
 
 /* 当前登录用户徽章 */
 .user-badge {
@@ -1979,7 +1986,9 @@ button.btn-ghost {
 /* ---------- 历史战局与站点数据 ---------- */
 .history-panel,
 .site-stats-panel { width: 100%; height: 100%; max-height: none; box-sizing: border-box; overflow-x: hidden; overflow-y: auto; padding: 0; color: var(--text); border: 1px solid rgba(233,193,120,0.22); border-radius: 20px; background: linear-gradient(145deg, rgba(12,38,34,0.98), rgba(6,22,20,0.98)); box-shadow: 0 22px 70px rgba(0,0,0,0.38), inset 0 1px 0 rgba(255,255,255,0.08); }
-.history-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 24px 26px 21px; background: radial-gradient(circle at 85% 0%, rgba(233,193,120,0.16), transparent 45%), linear-gradient(135deg, rgba(24,81,65,0.62), rgba(7,27,24,0.1)); border-bottom: 1px solid rgba(233,193,120,0.13); }
+.history-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; min-width: 0; padding: 24px 26px 21px; background: radial-gradient(circle at 85% 0%, rgba(233,193,120,0.16), transparent 45%), linear-gradient(135deg, rgba(24,81,65,0.62), rgba(7,27,24,0.1)); border-bottom: 1px solid rgba(233,193,120,0.13); }
+.history-hero > div { min-width: 0; flex: 1 1 auto; }
+.history-hero .lb-refresh { flex: 0 0 auto; }
 .history-eyebrow { color: var(--gold-300); font: 600 10px/1 var(--font-mono); letter-spacing: .18em; text-transform: uppercase; }
 .history-hero h2 { margin: 9px 0 5px; color: var(--gold-100); font: 700 27px/1 var(--font-serif); letter-spacing: .1em; }
 .history-hero p { margin: 0; color: var(--text-soft); font-size: 12px; line-height: 1.5; }
@@ -1994,7 +2003,7 @@ button.btn-ghost {
 .history-item:hover { border-color: rgba(233,193,120,0.38); background: rgba(233,193,120,0.055); }
 .history-item-main { min-width: 0; }
 .history-item-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.history-item-title strong { color: var(--gold-100); font: 700 16px/1.2 var(--font-serif); }
+.history-item-title strong { min-width: 0; overflow: hidden; color: var(--gold-100); font: 700 16px/1.2 var(--font-serif); text-overflow: ellipsis; white-space: nowrap; }
 .history-item-title span { color: var(--text-mute); font: 11px/1 var(--font-mono); }
 .history-item-title em { padding: 3px 6px; border-radius: 999px; font: 600 10px/1 var(--font-mono); font-style: normal; }
 .history-public { color: #9bd5b0; background: rgba(67,150,103,0.17); }
@@ -2033,7 +2042,8 @@ button.btn-ghost {
 .site-stats-live-dot { color: #79dc91; margin-right: 4px; }
 .site-stats-breakdown { grid-column: 1 / -1; padding: 14px 16px; border: 1px solid rgba(233,193,120,0.14); border-radius: 13px; background: rgba(255,255,255,0.025); }
 .site-stats-breakdown h3 { margin: 0 0 10px; color: var(--gold-300); font: 600 13px/1.2 var(--font-serif); }
-.site-stats-breakdown div { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; padding: 8px 0; color: var(--text-mute); border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; }
+.site-stats-breakdown div { display: grid; grid-template-columns: minmax(62px, .8fr) minmax(0, 1.4fr) auto; gap: 10px; min-width: 0; padding: 8px 0; color: var(--text-mute); border-top: 1px solid rgba(255,255,255,0.06); font-size: 11px; }
+.site-stats-breakdown div > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .site-stats-breakdown div:first-of-type { border-top: 0; }
 .site-stats-breakdown b { color: var(--text-soft); }
 .site-stats-breakdown strong { color: var(--gold-100); font-family: var(--font-mono); font-weight: 600; }
@@ -2463,25 +2473,33 @@ button.btn-ghost {
     --table-left-safe: 96px;
     --table-right-safe: 96px;
   }
-  .house { padding: 74px 14px 24px; gap: 14px; }
+  .house { padding: 112px 14px 24px; gap: 14px; }
   .quick-bar {
-    padding: 8px 8px;
-    gap: 6px;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    justify-content: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 7px 8px;
+    overflow: visible;
   }
   .quick-bar::before { font-size: 18px; letter-spacing: 0.2em; }
-  .quick-brand strong { font-size: 17px; letter-spacing: 0.16em; }
+  .quick-brand { grid-column: 1; min-width: 0; margin-right: 0; }
+  .quick-brand strong { overflow: hidden; font-size: 17px; letter-spacing: 0.16em; text-overflow: ellipsis; white-space: nowrap; }
   .quick-brand span { display: none; }
-  .quick-bar > button,
-  .quick-bar > button + button,
-  .user-badge { margin-left: 0; }
-  .btn-mute { margin-right: 0 !important; }
-  .quick-bar button {
-    flex: 0 0 auto;
+  .user-badge { grid-column: 2; margin-left: 0; max-width: 48vw; overflow: hidden; text-overflow: ellipsis; }
+  .quick-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+  .quick-actions > button {
+    min-width: 0;
+    width: 100%;
     min-height: 34px;
-    padding: 0 10px;
+    margin: 0 !important;
+    padding: 0 6px;
     font-size: 12px;
     white-space: nowrap;
   }
@@ -2810,7 +2828,7 @@ button.btn-ghost {
   .login-form button {
     width: 100%;
   }
-  .house { padding: 70px 14px 24px; gap: 16px; }
+  .house { padding: 112px 14px 24px; gap: 16px; }
   .desk { width: 152px; height: 152px; padding: 14px; }
   .room-card {
     width: 100%;
@@ -3604,6 +3622,14 @@ button.btn-ghost {
           backdrop-filter: blur(16px);
   overflow: hidden;
 }
+.layui-layer.layui-layer-page {
+  max-width: calc(100vw - 20px) !important;
+  max-height: calc(100vh - 20px) !important;
+}
+.layui-layer.layui-layer-page .layui-layer-content {
+  min-width: 0;
+  overflow-x: hidden !important;
+}
 .layui-layer .layui-layer-title {
   background: rgba(255,255,255,0.04) !important;
   color: var(--gold-300) !important;
@@ -4054,7 +4080,7 @@ button.btn-ghost {
   .lb-player { max-width: 118px; }
 }
 @media (max-width: 430px) {
-  .history-panel, .site-stats-panel { width: 94vw; max-height: 86vh; border-radius: 16px; }
+  .history-panel, .site-stats-panel { width: 100%; max-width: 100%; max-height: 86vh; border-radius: 16px; }
   .history-hero { padding: 19px 16px 17px; }
   .history-hero h2 { font-size: 23px; }
   .history-filter { padding: 13px 12px 10px; }
@@ -4079,4 +4105,22 @@ button.btn-ghost {
   .lb-podium-item b { font-size: 14px; }
   .lb-table-wrap { max-height: 250px; }
   .lb-table-wrap th:nth-child(4), .lb-table-wrap td:nth-child(4) { display: none; }
+}
+
+/* 键盘操作与低动态偏好：不改变牌桌视觉，只补可见焦点和可访问动效策略。 */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold-200);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 4px rgba(233,193,120,0.2);
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

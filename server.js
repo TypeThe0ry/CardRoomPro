@@ -739,8 +739,8 @@ const proto = {
       moves: [],
       result: {},
     };
-    db.recordSiteStat('game_starts');
-    db.recordSiteStat('player_rounds', players.filter(p => !p.isBot).length);
+    db.recordSiteStat('game_starts', 1, room.gameType);
+    db.recordSiteStat('player_rounds', players.filter(p => !p.isBot).length, room.gameType);
   },
   recordRoundMove(deskId, move) {
     const record = this.roundHistories[deskId];
@@ -765,8 +765,9 @@ const proto = {
     if (!record) return;
     record.endedAt = Date.now();
     record.result = result || {};
+    const gameType = record.gameType;
     delete this.roundHistories[deskId];
-    db.recordSiteStat('games_completed');
+    db.recordSiteStat('games_completed', 1, gameType);
     db.saveHistory(record).catch(err => console.error('[history] 保存失败：', err && err.message));
   },
   startGame(deskId) {

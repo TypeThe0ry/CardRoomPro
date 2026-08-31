@@ -10,7 +10,7 @@
  *   DB_TABLE_PREFIX    Discuz 表前缀（默认 pre_）
  *   DB_DISABLE         设为 1 时关闭持久化（仅内存）
  *
- * 启动时会自动建表（如果不存在）：积分表、<前缀>game_history、<前缀>site_stats
+ * 启动时会自动建表（如果不存在）：积分表、<前缀>game_history、<前缀>site_stats、<前缀>site_game_stats
  */
 
 const TABLE_PREFIX = process.env.DB_TABLE_PREFIX || 'pre_';
@@ -23,7 +23,10 @@ const TABLE = TABLES.doudizhu;
 const HISTORY_TABLE = `${TABLE_PREFIX}game_history`;
 const SITE_STATS_TABLE = `${TABLE_PREFIX}site_stats`;
 const SITE_STATS_META_TABLE = `${TABLE_PREFIX}site_stats_meta`;
+const SITE_GAME_STATS_TABLE = `${TABLE_PREFIX}site_game_stats`;
 const STAT_COLUMNS = ['page_views', 'socket_connections', 'game_starts', 'games_completed', 'player_rounds', 'spectator_visits'];
+const GAME_STAT_COLUMNS = ['game_starts', 'games_completed', 'player_rounds'];
+const GAME_TYPES = Object.keys(TABLES);
 const memoryHistory = [];
 const memoryStats = {
   page_views: 0,
@@ -34,6 +37,15 @@ const memoryStats = {
   spectator_visits: 0,
   updated_at: 0,
 };
+const memoryGameStats = {};
+GAME_TYPES.forEach(gameType => {
+  memoryGameStats[gameType] = {
+    game_starts: 0,
+    games_completed: 0,
+    player_rounds: 0,
+    updated_at: 0,
+  };
+});
 let memoryHistorySeq = 1;
 let memoryStatsMeta = null;
 const siteStatsListeners = new Set();
@@ -120,6 +132,16 @@ async function init() {
         \`version\` INT UNSIGNED NOT NULL DEFAULT 0,
         \`data_quality_json\` MEDIUMTEXT NOT NULL,
         \`updated_at\` BIGINT UNSIGNED NOT NULL DEFAULT 0
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS \`${SITE_GAME_STATS_TABLE}\` (
+        \`game_type\` VARCHAR(20) NOT NULL PRIMARY KEY,
+        \`game_starts\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        \`games_completed\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        \`player_rounds\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        \`updated_at\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+        KEY \`idx_game_stats_updated\` (\`updated_at\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     `);
     ready = true;
@@ -366,6 +388,34 @@ function statPayload(row) {
   return result;
 }
 
+function normalizeGameType(gameType) {
+  const value = String(gameType || '').trim();
+  return GAME_TYPES.includes(value) ? value : '';
+}
+
+function gameStatsPayload(rows, meta) {
+  const liveRows = Array.isArray(rows) ? rows : [];
+  const quality = meta && typeof meta === 'object' ? meta : safeJson(meta, {});
+  const baselineRows = quality && Array.isArray(quality.byGame) ? quality.byGame : [];
+  const findRow = (list, gameType) => list.find(item => String(item.gameType || item.game_type || '') === gameType) || {};
+  return GAME_TYPES.map(gameType => {
+    const live = findRow(liveRows, gameType);
+    const baseline = findRow(baselineRows, gameType);
+    const baselineGames = Math.max(0, Math.floor(Number(baseline.games || baseline.completed || baseline.completedEstimate) || 0));
+    const baselinePlays = Math.max(0, Math.floor(Number(baseline.plays || baseline.playerRounds) || 0));
+    // 旧数据只有完成局推导值，没有单独的开局计数；显示口径采用完成局作为历史开局基线，
+    // 新产生的开局/完成局/游玩人次则从独立分玩法统计表实时累加。
+    const baselineStarts = Math.max(0, Math.floor(Number(baseline.starts || baseline.gameStarts || baselineGames) || 0));
+    return {
+      gameType,
+      starts: baselineStarts + Math.max(0, Math.floor(Number(live.game_starts || live.starts) || 0)),
+      games: baselineGames + Math.max(0, Math.floor(Number(live.games_completed || live.games) || 0)),
+      plays: baselinePlays + Math.max(0, Math.floor(Number(live.player_rounds || live.plays) || 0)),
+      updatedAt: Number(live.updated_at || live.updatedAt || 0),
+    };
+  });
+}
+
 function attachStatsMeta(result, meta) {
   if (!meta) return result;
   const parsed = typeof meta === 'string' ? safeJson(meta, null) : meta;
@@ -408,13 +458,19 @@ function scheduleSiteStatsNotify() {
   if (siteStatsNotifyTimer.unref) siteStatsNotifyTimer.unref();
 }
 
-async function recordSiteStat(name, amount = 1) {
+async function recordSiteStat(name, amount = 1, gameType = '') {
+  const normalizedGameType = normalizeGameType(gameType);
   if (!STAT_COLUMNS.includes(name)) return;
+  if (gameType && (!normalizedGameType || !GAME_STAT_COLUMNS.includes(name))) return;
   const delta = Math.max(0, Math.floor(Number(amount) || 0));
   if (!delta) return;
   memoryStats[name] += delta;
   const now = Math.floor(Date.now() / 1000);
   memoryStats.updated_at = now;
+  if (normalizedGameType) {
+    memoryGameStats[normalizedGameType][name] += delta;
+    memoryGameStats[normalizedGameType].updated_at = now;
+  }
   if (!isReady()) {
     scheduleSiteStatsNotify();
     return;
@@ -425,6 +481,13 @@ async function recordSiteStat(name, amount = 1) {
        ON DUPLICATE KEY UPDATE \`${name}\` = \`${name}\` + VALUES(\`${name}\`), updated_at = VALUES(updated_at)`,
       [delta, now]
     );
+    if (normalizedGameType) {
+      await pool.query(
+        `INSERT INTO \`${SITE_GAME_STATS_TABLE}\` (game_type, \`${name}\`, updated_at) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE \`${name}\` = \`${name}\` + VALUES(\`${name}\`), updated_at = VALUES(updated_at)`,
+        [normalizedGameType, delta, now]
+      );
+    }
   } catch (err) {
     console.error('[db] recordSiteStat 失败：', err && err.message);
   }
@@ -436,12 +499,25 @@ async function getSiteStats() {
     try {
       const [rows] = await pool.query(`SELECT * FROM \`${SITE_STATS_TABLE}\` WHERE id = 1 LIMIT 1`);
       const [metaRows] = await pool.query(`SELECT data_quality_json FROM \`${SITE_STATS_META_TABLE}\` WHERE id = 1 LIMIT 1`);
-      return attachStatsMeta(statPayload(rows[0] || {}), metaRows[0] && metaRows[0].data_quality_json);
+      const meta = metaRows[0] && metaRows[0].data_quality_json;
+      let gameRows = [];
+      try {
+        const [result] = await pool.query(`SELECT game_type, game_starts, games_completed, player_rounds, updated_at FROM \`${SITE_GAME_STATS_TABLE}\``);
+        gameRows = result;
+      } catch (err) {
+        // 升级中的旧实例可能还没建分玩法表，聚合统计仍然可正常返回。
+        console.error('[db] getSiteStats 分玩法统计失败：', err && err.message);
+      }
+      const result = attachStatsMeta(statPayload(rows[0] || {}), meta);
+      result.byGame = gameStatsPayload(gameRows, safeJson(meta, {}));
+      return result;
     } catch (err) {
       console.error('[db] getSiteStats 失败：', err && err.message);
     }
   }
-  return attachStatsMeta(statPayload(memoryStats), memoryStatsMeta);
+  const result = attachStatsMeta(statPayload(memoryStats), memoryStatsMeta);
+  result.byGame = gameStatsPayload(GAME_TYPES.map(gameType => Object.assign({ gameType }, memoryGameStats[gameType])), memoryStatsMeta);
+  return result;
 }
 
 /**
@@ -555,4 +631,5 @@ module.exports = {
   subscribeSiteStats,
   getHistoricalGameStats, backfillSiteStats,
   TABLE, TABLES, HISTORY_TABLE, SITE_STATS_TABLE, SITE_STATS_META_TABLE,
+  SITE_GAME_STATS_TABLE,
 };

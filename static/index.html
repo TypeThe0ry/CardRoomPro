@@ -116,20 +116,22 @@
 
     <!-- 大厅 -->
     <div class="full-screen house" v-if="where === 1">
-      <div class="row text-right quick-bar">
+      <nav class="row text-right quick-bar" aria-label="大厅功能">
         <div class="quick-brand">
           <strong>雀阁</strong>
           <span>纸牌房</span>
         </div>
         <span v-if="myUser && myUser.username" class="user-badge" :title="'已用 Discuz 账号登录 (uid=' + myUser.uid + ')'">{{myUser.username}}</span>
-        <button class="btn-ghost btn-mute" type="button" @click="toggleMute"
-          :title="muted ? '开启音效' : '静音'">{{muted ? '♪ 静音' : '♪ 音效'}}</button>
-        <button class="btn-ghost" type="button" @click="openStats">我的战绩</button>
-        <button class="btn-ghost" type="button" @click="openHistory">历史战局</button>
-        <button class="btn-ghost" type="button" @click="openSiteStats">数据统计</button>
-        <button class="btn-ghost" type="button" @click="openRules">玩法规则</button>
-        <button @click="quickJoin">快速入局</button>
-      </div>
+        <div class="quick-actions">
+          <button class="btn-ghost btn-mute" type="button" @click="toggleMute"
+            :title="muted ? '开启音效' : '静音'">{{muted ? '♪ 静音' : '♪ 音效'}}</button>
+          <button class="btn-ghost" type="button" @click="openStats" aria-label="查看我的战绩">我的战绩</button>
+          <button class="btn-ghost" type="button" @click="openHistory" aria-label="查看历史战局">历史战局</button>
+          <button class="btn-ghost" type="button" @click="openSiteStats" aria-label="查看实时数据统计">数据统计</button>
+          <button class="btn-ghost" type="button" @click="openRules" aria-label="查看玩法规则">玩法规则</button>
+          <button type="button" @click="quickJoin" aria-label="快速加入一局游戏">快速入局</button>
+        </div>
+      </nav>
       <div class="hall-shell">
         <div class="hall-hero">
           <div>
@@ -1592,7 +1594,7 @@
               var title = layerEl.querySelector('.layui-layer-title');
               if (!content) return;
               var titleHeight = title ? title.offsetHeight : 0;
-              var maxContentHeight = Math.max(220, Math.floor(window.innerHeight * 0.78) - titleHeight);
+              var maxContentHeight = Math.max(180, Math.min(760, (window.innerHeight || 480) - titleHeight - 24));
 
               // 先恢复自然高度，再按内容高度（及视口上限）设置弹窗。
               panel.style.height = 'auto';
@@ -1693,8 +1695,8 @@
             '<div class="history-filter"><button type="button" class="history-filter-btn active" data-game="all">全部</button><button type="button" class="history-filter-btn" data-game="doudizhu">斗地主</button><button type="button" class="history-filter-btn" data-game="guandan">掼蛋</button><button type="button" class="history-filter-btn" data-game="mahjong">麻将</button></div>' +
             '<div id="history-list" class="history-list"><div class="stats-loading">战局加载中...</div></div>' +
             '</div>';
-          var historyWidth = Math.min(900, Math.max(320, Math.floor(window.innerWidth * 0.94)));
-          var historyHeight = Math.min(780, Math.max(360, Math.floor(window.innerHeight * 0.82)));
+          var historyWidth = Math.max(220, Math.min(900, (window.innerWidth || 360) - 20));
+          var historyHeight = Math.max(180, Math.min(780, (window.innerHeight || 480) - 60));
           var idx = layer.open({ type: 1, title: '历史战局', shadeClose: true, area: [historyWidth + 'px', historyHeight + 'px'], content: panelHtml });
           var panel = document.getElementById('history-panel');
           var list = document.getElementById('history-list');
@@ -1783,8 +1785,8 @@
           var self = this;
           var esc = this.htmlEscape;
           var html = '<div id="site-stats-panel" class="site-stats-panel"><div class="history-hero"><div><span class="history-eyebrow">雀阁 · 运营数据</span><h2>数据统计 <em class="site-stats-live"><i>●</i> 实时</em></h2><p>累计访问、开局、游玩人次与观战数据 · <span id="site-stats-updated">等待同步</span></p></div><button type="button" class="lb-refresh" id="site-stats-refresh">↻ 刷新</button></div><div id="site-stats-grid" class="site-stats-grid"><div class="stats-loading">数据加载中...</div></div></div>';
-          var statsWidth = Math.min(760, Math.max(320, Math.floor(window.innerWidth * 0.94)));
-          var statsHeight = Math.min(620, Math.max(320, Math.floor(window.innerHeight * 0.72)));
+          var statsWidth = Math.max(220, Math.min(760, (window.innerWidth || 360) - 20));
+          var statsHeight = Math.max(180, Math.min(620, (window.innerHeight || 480) - 60));
           var grid = null;
           var updated = null;
           var loading = false;
@@ -1803,10 +1805,11 @@
             var quality = data.dataQuality || {};
             var cards = [{ key: 'games', label: '完成战局', icon: '局' }, { key: 'visits', label: '页面访问', icon: '访' }, { key: 'plays', label: '游玩人次', icon: '玩' }, { key: 'game_starts', label: '开局次数', icon: '开' }, { key: 'socket_connections', label: '连接次数', icon: '连' }, { key: 'spectator_visits', label: '观战次数', icon: '观' }];
             var cardsHtml = cards.map(function (card) { return '<article class="site-stat-card"><i>' + card.icon + '</i><strong>' + Number(data[card.key] || 0).toLocaleString() + '</strong><span>' + esc(card.label) + '</span></article>'; }).join('');
-            var gameRows = Array.isArray(quality.byGame) ? quality.byGame.map(function (item) { var label = item.gameType === 'mahjong' ? '麻将' : (item.gameType === 'guandan' ? '掼蛋' : '斗地主'); return '<div><b>' + label + '</b><span>玩家局数 ' + Number(item.playerRounds || 0).toLocaleString() + '</span><strong>' + Number(item.completedEstimate || 0).toLocaleString() + ' 局</strong></div>'; }).join('') : '';
+            var byGame = Array.isArray(data.byGame) ? data.byGame : (Array.isArray(quality.byGame) ? quality.byGame.map(function (item) { return { gameType: item.gameType, starts: item.completedEstimate || 0, games: item.completedEstimate || 0, plays: item.playerRounds || 0 }; }) : []);
+            var gameRows = byGame.map(function (item) { var label = item.gameType === 'mahjong' ? '麻将' : (item.gameType === 'guandan' ? '掼蛋' : '斗地主'); return '<div><b>' + label + '</b><span>游玩人次 ' + Number(item.plays || 0).toLocaleString() + ' · 开局 ' + Number(item.starts || 0).toLocaleString() + '</span><strong>' + Number(item.games || 0).toLocaleString() + ' 局</strong></div>'; }).join('');
             var updatedAt = Number(data.updatedAt || 0);
             if (updated) updated.textContent = updatedAt ? '最后同步 ' + new Date(updatedAt * 1000).toLocaleTimeString() : '实时同步中';
-            grid.innerHTML = cardsHtml + (gameRows ? '<section class="site-stats-breakdown"><h3>各玩法数据</h3>' + gameRows + '</section>' : '') + '<div class="site-stats-note"><span class="site-stats-live-dot">●</span> 服务端实时推送 · 数据变化后自动更新</div>';
+            grid.innerHTML = cardsHtml + (gameRows ? '<section class="site-stats-breakdown"><h3>各玩法实时数据</h3>' + gameRows + '</section>' : '') + '<div class="site-stats-note"><span class="site-stats-live-dot">●</span> 服务端实时推送 · 数据变化后自动更新</div>';
           };
           var load = function (showLoading) {
             if (loading) return;
