@@ -37,6 +37,8 @@ async function run() {
   const indexHtml = fs.readFileSync(path.join(ROOT, 'static', 'index.html'), 'utf8');
   assert.match(serverJs, /SITE_STATS_UPDATE/, '服务端实时统计事件缺失');
   assert.match(serverJs, /subscribeSiteStats/, '服务端统计订阅缺失');
+  assert.match(serverJs, /function publicSiteStats/, '公开统计响应缺少内部元数据过滤');
+  assert.match(serverJs, /delete snapshot\.dataQuality/, '公开统计响应仍可能暴露数据质量内部字段');
   assert.match(serverJs, /Cache-Control.*no-store/, '统计接口未禁用缓存');
   assert.match(indexHtml, /site-stats-live/, '统计面板实时状态标识缺失');
   assert.match(indexHtml, /SITE_STATS_UPDATE/, '前端实时统计监听缺失');
@@ -85,6 +87,7 @@ async function run() {
     );
     const live = updates.find(item => Number(item.visits || 0) >= Number(baseline.data.visits || 0) + 1);
     assert(Number(live.updatedAt || 0) > 0, '实时统计快照缺少更新时间: ' + JSON.stringify({ baseline: baseline.data, live, updates }));
+    assert.strictEqual(Object.prototype.hasOwnProperty.call(live, 'dataQuality'), false, '实时统计不应把内部数据质量说明推给前端');
     console.log('Live site stats tests passed: initial snapshot, no-cache API, Socket.IO push, and page-view update.');
   } finally {
     try { if (socket) socket.disconnect(); } catch (e) {}

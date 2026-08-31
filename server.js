@@ -72,9 +72,18 @@ const MahjongAI = require('./static/js/mahjong-ai.js').MahjongAI;
 const AiDifficulty = require('./ai-difficulty.js');
 const db = require('./db.js');
 
+// 运营统计的历史回填说明只供服务端/维护脚本使用，公开接口只返回正常业务指标，
+// 避免把“估算、来源、恢复时间”等内部数据质量字段带到用户界面。
+function publicSiteStats(stats) {
+  const snapshot = Object.assign({}, stats || {});
+  delete snapshot.dataQuality;
+  delete snapshot.backfilledAt;
+  return snapshot;
+}
+
 // 站点运营数据有变化时主动推送给所有在线页面；前端统计弹窗无需手动刷新。
 db.subscribeSiteStats(stats => {
-  io.emit('SITE_STATS_UPDATE', stats || {});
+  io.emit('SITE_STATS_UPDATE', publicSiteStats(stats));
 });
 
 // 底分（每分对应多少积分）。可通过环境变量调整。
@@ -221,7 +230,7 @@ app.get('/api/site-stats', (req, res) => {
   res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.set('Pragma', 'no-cache');
   res.set('Expires', '0');
-  db.getSiteStats().then(stats => res.json(stats)).catch(() => res.status(500).json({ error: 'stats_error' }));
+  db.getSiteStats().then(stats => res.json(publicSiteStats(stats))).catch(() => res.status(500).json({ error: 'stats_error' }));
 });
 
 // HTTP：SSO 配置健康检查。公开响应只返回布尔配置状态，不暴露密钥长度、
@@ -1510,7 +1519,7 @@ const proto = {
         socket.emit('LOGIN_FAIL', { msg: socket.tokenError, code: 'TOKEN_INVALID' });
       }
       // 新连接先拿一份当前快照，后续由 SITE_STATS_UPDATE 持续刷新。
-      db.getSiteStats().then(stats => socket.emit('SITE_STATS_UPDATE', stats || {})).catch(() => {});
+      db.getSiteStats().then(stats => socket.emit('SITE_STATS_UPDATE', publicSiteStats(stats))).catch(() => {});
       // if socket was authenticated via token, auto-register client
       if (socket.user) {
         try {
