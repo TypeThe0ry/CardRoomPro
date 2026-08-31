@@ -485,6 +485,9 @@ const proto = {
       ownerName: options.ownerName || '',
       aiDifficulty: AiDifficulty.normalizeAiDifficulty(options.aiDifficulty),
       pauseInfo: null,
+      // 断线回归凭据只保存在服务端内存中，不下发给客户端；
+      // 玩家/观众在短窗口内可以用原身份恢复原桌状态。
+      reconnectSlots: {},
       createdAt: Date.now(),
       positions: createPositions(meta.seats),
       guandanLevelRank: 15,
@@ -528,7 +531,7 @@ const proto = {
   },
   getFirstOpenPos(room) {
     if (!room) return null;
-    return room.positions.find(pos => pos.state === 0 && !pos.pendingSocketId) || null;
+    return room.positions.find(pos => pos.state === 0 && !pos.pendingSocketId && !this.getPlayerReconnectSlot(room, pos.posId)) || null;
   },
   getRandomBotPos(room) {
     if (!room) return null;
@@ -547,13 +550,99 @@ const proto = {
       }
     }, 5000);
   },
+  reconnectIdentity(client) {
+    if (!client) return '';
+    if (client.uid) return 'uid:' + String(client.uid);
+    if (client.guestId) return 'guest:' + String(client.guestId);
+    return 'name:' + String(client.userName || '');
+  },
+  reconnectSlotMatches(slot, client) {
+    if (!slot || !client) return false;
+    if (slot.uid) return String(client.uid || '') === String(slot.uid);
+    if (slot.guestId) return String(client.guestId || '') === String(slot.guestId);
+    return !!slot.userName && String(client.userName || '') === String(slot.userName);
+  },
+  getPlayerReconnectSlot(room, posId) {
+    if (!room || !room.reconnectSlots) return null;
+    const key = 'player:' + String(Number(posId));
+    const slot = room.reconnectSlots[key];
+    if (!slot) return null;
+    if (Number(slot.expiresAt || 0) <= Date.now()) {
+      delete room.reconnectSlots[key];
+      return null;
+    }
+    return slot;
+  },
+  clearPlayerReconnectSlot(room, posId) {
+    if (!room || !room.reconnectSlots) return;
+    delete room.reconnectSlots['player:' + String(Number(posId))];
+  },
+  findSpectatorReconnectSlot(room, client) {
+    if (!room || !room.reconnectSlots || !client) return null;
+    const now = Date.now();
+    for (const key of Object.keys(room.reconnectSlots)) {
+      const slot = room.reconnectSlots[key];
+      if (!slot || slot.kind !== 'spectator') continue;
+      if (Number(slot.expiresAt || 0) <= now) {
+        delete room.reconnectSlots[key];
+        continue;
+      }
+      if (this.reconnectSlotMatches(slot, client)) return { key, slot };
+    }
+    return null;
+  },
+  pruneReconnectSlots(room) {
+    if (!room || !room.reconnectSlots) return;
+    const now = Date.now();
+    Object.keys(room.reconnectSlots).forEach(key => {
+      const slot = room.reconnectSlots[key];
+      if (!slot || Number(slot.expiresAt || 0) <= now) delete room.reconnectSlots[key];
+    });
+  },
+  hasActivePlayerReconnectSlot(room) {
+    this.pruneReconnectSlots(room);
+    return !!(room && room.reconnectSlots && Object.keys(room.reconnectSlots).some(key => key.indexOf('player:') === 0));
+  },
+  rememberReconnectSlot(deskId, posId, client, kind) {
+    const room = this.getDesk(deskId);
+    if (!room || !client) return null;
+    const slotKind = kind === 'spectator' ? 'spectator' : 'player';
+    const expiresAt = Date.now() + GAME_PAUSE_GRACE_MS;
+    const slot = {
+      kind: slotKind,
+      posId: slotKind === 'player' ? Number(posId) : 'spec',
+      uid: client.uid ? String(client.uid) : '',
+      guestId: client.guestId ? String(client.guestId) : '',
+      userName: String(client.userName || ''),
+      avatarUrl: client.avatarUrl || '',
+      expiresAt,
+    };
+    const key = slotKind === 'player'
+      ? 'player:' + String(Number(posId))
+      : 'spectator:' + this.reconnectIdentity(client);
+    room.reconnectSlots[key] = slot;
+    const timer = setTimeout(() => {
+      const currentRoom = this.getDesk(deskId);
+      if (!currentRoom || !currentRoom.reconnectSlots || currentRoom.reconnectSlots[key] !== slot) return;
+      if (Number(slot.expiresAt || 0) <= Date.now()) {
+        delete currentRoom.reconnectSlots[key];
+        this.refreshLobby();
+        this.cleanupRoomIfEmpty(deskId);
+      }
+    }, GAME_PAUSE_GRACE_MS + 150);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    return slot;
+  },
   cleanupRoomIfEmpty(deskId) {
     const room = this.getDesk(deskId);
     if (!room) return;
+    this.pruneReconnectSlots(room);
     const hasHuman = this.clients.some(c => c.deskId === deskId && c.posId !== 'spec');
     if (hasHuman) return;
     // 对局暂停窗口内保留房间和牌局，给房主/回归玩家一分钟处理时间。
     if (room.pauseInfo) return;
+    // 等待阶段没有 pauseInfo，也要给刚断线的玩家留下回归窗口。
+    if (this.hasActivePlayerReconnectSlot(room)) return;
     this.removeAllBots(deskId);
     this.clearBotTimer(deskId);
     this.clearPauseTimer(deskId);
@@ -844,6 +933,8 @@ const proto = {
     if (!desk) return;
     const pos = this.getPosition(desk, posId);
     if (!pos) return;
+    // AI 接管后，原玩家的回归凭据立即失效，避免同一座位被二次恢复。
+    this.clearPlayerReconnectSlot(desk, posId);
     const used = desk.positions.map(x => String(x.userName || '').replace(/\s*〔AI〕$/, '')).filter(Boolean);
     const name = (BOT_NAMES.find(n => !used.includes(n)) || '清客') + ' 〔AI〕';
     pos.state = 2; pos.userName = name; pos.avatarUrl = ''; pos.isBot = true;
@@ -871,6 +962,63 @@ const proto = {
     if (!desk) return false;
     const p = this.getPosition(desk, posId);
     return !!(p && p.isBot);
+  },
+  handleDisconnectedClient(client) {
+    if (!client || client._disconnectHandled) return;
+    client._disconnectHandled = true;
+    const { deskId, posId } = client;
+    if (!deskId) return;
+    const userName = client.userName || '';
+
+    // 观战者不占座位、不暂停牌局，但保留短暂的原桌回归窗口，
+    // 私密房也只能由原观战身份恢复。
+    if (posId === 'spec') {
+      this.rememberReconnectSlot(deskId, 'spec', client, 'spectator');
+      this.broadCastRoom('USER_MESSAGE', deskId, {
+        type: 'SYS', posId: 'spec', msg: `观众[${userName || '观众'}]离开房间`, id: guid(), time: time()
+      });
+      console.log('观战者断开连接 %s', time());
+      return;
+    }
+
+    const desk = this.getDesk(deskId);
+    const game = this.gameDatas[deskId];
+    const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
+    // 先记住原身份，再按原有逻辑释放显示座位；RESUME_ROOM 会在窗口内重新占回它。
+    this.rememberReconnectSlot(deskId, posId, client, 'player');
+    this.updatePosStatus(deskId, posId, 0, '');
+    this.broadCastRoom('POS_STATUS_CHANGE', deskId, {
+      posId, state: 0, userName: '', avatarUrl: '', reconnecting: true
+    }, client.socket);
+    this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
+
+    if (inProgress) {
+      this.updateOtherPosStatus(deskId, posId, 1);
+      this.broadCastRoom('POS_STATUS_RESET', deskId, { pos: this.getOtherPosInfo(deskId, posId), state: 1 }, client.socket);
+      this.pauseGameForMissingPlayer(deskId, posId, userName || '玩家');
+    } else {
+      this.updateRoomStatus(deskId, 0);
+    }
+    this.broadCastRoom('USER_MESSAGE', deskId, {
+      type: 'SYS', posId, msg: `玩家[${userName || '玩家'}]退出房间`, id: guid(), time: time()
+    }, client.socket);
+    console.log('有客户端退出房间，桌号：%s，座位：%s，时间：', deskId, posId, time());
+
+    // 若该桌已无真人，则非暂停状态清退房间；回归窗口或暂停窗口会阻止误清理。
+    if (!this.hasHumanAtDesk(deskId)) {
+      this.cleanupRoomIfEmpty(deskId);
+    } else {
+      this.refreshLobby();
+    }
+  },
+  evictClientForReplacement(client, message) {
+    if (!client) return;
+    try { client.socket.emit('FORCE_LOGOUT', { msg: message || '账号在别处登录' }); } catch (e) {}
+    // 先从在线列表移除，再同步写入回归槽；这样新连接可以立即 RESUME_ROOM，
+    // 不受旧 socket 的异步 disconnect 事件顺序影响。
+    this.removeClient(client.socket);
+    this.handleDisconnectedClient(client);
+    try { client.socket.disconnect(true); } catch (e) {}
   },
   rePrepareBots(deskId) {
     const desk = this.getDesk(deskId);
@@ -1070,6 +1218,7 @@ const proto = {
     room.pauseInfo = null;
     this.clearBotTimer(deskId);
     this.clearMahjongClaimTimer(deskId);
+    this.clearPlayerReconnectSlot(room, paused.posId);
     if (game) game.init();
     delete this.roundHistories[deskId];
     room.positions.forEach(pos => {
@@ -1527,8 +1676,7 @@ const proto = {
           for (let i = this.clients.length - 1; i >= 0; i--) {
             const c = this.clients[i];
             if (c.userName === socket.user.username && c.socket !== socket) {
-              try { c.socket.emit('FORCE_LOGOUT', { msg: '账号在别处登录' }); c.socket.disconnect(true); } catch (e) {}
-              this.clients.splice(i, 1);
+              this.evictClientForReplacement(c, '账号在别处登录');
             }
           }
           this.addClient(socket, { userName: socket.user.username, uid: socket.user.uid, avatarUrl: socket.user.avatarUrl });
@@ -1544,6 +1692,17 @@ const proto = {
       socket.on('LOGIN', data => {
         const userName = typeof data === 'string' ? data : (data && data.userName);
         const guestId = typeof data === 'object' && data ? String(data.guestId || '').slice(0, 128) : '';
+        const current = this.getClient(socket);
+        if (current && current.userName === userName) {
+          socket.emit('LOGIN_SUCCESS', this.getLobbyRooms());
+          return;
+        }
+        // Socket.IO 重连时，旧连接的 disconnect 事件可能与新连接的 LOGIN
+        // 交错到达；同一 guestId 视为原会话替换，先保留其房间回归槽。
+        const existing = this.clients.find(c => c.socket !== socket && c.userName === userName);
+        if (existing && guestId && existing.guestId && String(existing.guestId) === guestId) {
+          this.evictClientForReplacement(existing, '连接已恢复');
+        }
         if (this.checkUserName(userName)) {
           this.addClient(socket, { userName, guestId });
           socket.emit('LOGIN_SUCCESS', this.getLobbyRooms());
@@ -1635,7 +1794,7 @@ const proto = {
           positions.forEach(pos => {
             if (pos.state > 0) {
               n++;
-            } else if (!pos.pendingSocketId) {
+            } else if (!pos.pendingSocketId && !this.getPlayerReconnectSlot(desk, pos.posId)) {
               item.positions.push(pos.posId)
             }
           });
@@ -1689,7 +1848,8 @@ const proto = {
         const pausedForPosition = !!(desk && desk.pauseInfo && Number(desk.pauseInfo.posId) === Number(posId));
         const reservedForMe = pos && (!pos.pendingSocketId || pos.pendingSocketId === socket.id);
         const takingBot = !!(pos && pos.isBot);
-        const canTake = pos && ((pos.state === 0 && reservedForMe) || (takingBot && reservedForMe));
+        const reconnectSlot = desk && !takingBot ? this.getPlayerReconnectSlot(desk, posId) : null;
+        const canTake = pos && !reconnectSlot && ((pos.state === 0 && reservedForMe) || (takingBot && reservedForMe));
         if (canTake) {
           pos.pendingSocketId = '';
           if (pos.isBot) {
@@ -1740,7 +1900,7 @@ const proto = {
           }
         } else {
           //通知该客户端此座位被人占用
-          socket.emit('SITDOWN_ERROR', { msg: '该位置已有人' });
+          socket.emit('SITDOWN_ERROR', { msg: reconnectSlot ? '原玩家正在回归，请稍候' : '该位置已有人' });
           //由于当前位置被占用可能是由于该客户端数据不同步造成，所以再次向该客户端推送一次所有桌数据
           socket.emit('REFRESH_LIST', this.getLobbyRooms());
         }
@@ -2007,51 +2167,123 @@ const proto = {
         if (!client) {
           return;
         }
-        const userName = this.getUserName(socket);
-        const { deskId, posId } = client;
         this.removeClient(socket);
-
-        if (deskId) {
-          // 观战者断连：不动座位/游戏状态
-          if (posId === 'spec') {
-            const userName2 = userName || '观众';
-            this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId: 'spec', msg: `观众[${userName2}]离开房间`, id: guid(), time: time() });
-            console.log('观战者断开连接 %s', time());
-            return;
-          }
-          //更新座位状态
-          const desk = this.getDesk(deskId);
-          const game = this.gameDatas[deskId];
-          const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
-          this.updatePosStatus(deskId, posId, 0, '');
-          //解绑座位号 桌号
-          this.updateClientState(socket);
-          //通知在房间里的其它客户端，更新座位息
-          this.broadCastRoom("POS_STATUS_CHANGE", deskId, { posId, state: 0, userName: '', avatarUrl: '' }, socket);
-          //通知大厅其它客户端更新该座位信息
-          this.broadCastHouse('STATUS_CHANGE', { deskId, posId, state: 0 });
-
-          if (inProgress) {
-            this.updateOtherPosStatus(deskId, posId, 1);
-            this.broadCastRoom("POS_STATUS_RESET", deskId, { pos: this.getOtherPosInfo(deskId, posId), state: 1 });
-            this.pauseGameForMissingPlayer(deskId, posId, userName || '玩家');
-          } else {
-            this.updateRoomStatus(deskId, 0);
-          }
-          //推送一条无关紧要的消息
-          this.broadCastRoom('USER_MESSAGE', deskId, { type: 'SYS', posId, msg: `玩家[${userName}]退出房间`, id: guid(), time: time() })
-          console.log('有客户端退出房间，桌号：%s，座位：%s，时间：', deskId, posId, time());
-
-          // 若该桌已无真人，则清退所有 AI
-          if (!this.hasHumanAtDesk(deskId)) {
-            this.cleanupRoomIfEmpty(deskId);
-          } else {
-            this.refreshLobby();
-          }
-        }
+        this.handleDisconnectedClient(client);
 
         console.log('有客户端断开了连接 %s', time());
       })
+
+      // 网络抖动/页面刷新后的短时回归：客户端只能恢复自己原先的身份和座位，
+      // 不接受任意用户指定座位，避免把断线保留窗口变成抢座入口。
+      socket.on('RESUME_ROOM', data => {
+        const client = this.getClient(socket);
+        if (!client) {
+          socket.emit('RESUME_ROOM_ERROR', { code: 'NOT_LOGGED_IN', msg: '登录状态已失效，请重新进入' });
+          return;
+        }
+        if (client.deskId) {
+          socket.emit('RESUME_ROOM_ERROR', { code: 'ALREADY_IN_ROOM', msg: '当前连接已经在房间内' });
+          return;
+        }
+        const desk = this.getDesk(data && (data.deskId || data.roomCode));
+        if (!desk) {
+          socket.emit('RESUME_ROOM_ERROR', { code: 'ROOM_NOT_FOUND', msg: '房间已不存在' });
+          return;
+        }
+
+        const spectator = !!(data && (data.mode === 'spectator' || String(data.posId) === 'spec'));
+        if (spectator) {
+          const found = this.findSpectatorReconnectSlot(desk, client);
+          if (!found) {
+            socket.emit('RESUME_ROOM_ERROR', { code: 'RESUME_EXPIRED', msg: '观战回归窗口已结束，请重新进入观战' });
+            return;
+          }
+          delete desk.reconnectSlots[found.key];
+          this.updateClientState(socket, desk.deskId, 'spec');
+          const game = this.gameDatas[desk.deskId];
+          const status = game && game.getStatus ? game.getStatus() : 0;
+          const gameInProgress = status >= 1 && status < 3;
+          socket.emit('SPECTATE_SUCCESS', {
+            deskId: desk.deskId,
+            roomCode: desk.roomCode,
+            gameType: desk.gameType,
+            gameLabel: desk.gameLabel,
+            seatCount: desk.seatCount,
+            ownerName: desk.ownerName,
+            aiDifficulty: desk.aiDifficulty,
+            aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+            guandanLevelLabel: desk.guandanLevelLabel,
+            guandanLevelRank: desk.guandanLevelRank,
+            positions: desk.positions,
+            gameInProgress,
+            snapshot: gameInProgress ? this.getGameSnapshot(desk.deskId) : null,
+            paused: this.getPausePayload(desk),
+            resumed: true,
+          });
+          this.broadCastRoom('USER_MESSAGE', desk.deskId, {
+            type: 'SYS', posId: 'spec', msg: `观众[${client.userName || '观众'}]回到房间`, id: guid(), time: time()
+          }, socket);
+          return;
+        }
+
+        const posId = Number(data && data.posId);
+        if (!Number.isInteger(posId) || posId < 0 || posId >= desk.seatCount) {
+          socket.emit('RESUME_ROOM_ERROR', { code: 'INVALID_SEAT', msg: '回归座位无效' });
+          return;
+        }
+        const slot = this.getPlayerReconnectSlot(desk, posId);
+        const pos = this.getPosition(desk, posId);
+        if (!slot || !this.reconnectSlotMatches(slot, client)) {
+          socket.emit('RESUME_ROOM_ERROR', { code: slot ? 'IDENTITY_MISMATCH' : 'RESUME_EXPIRED', msg: '原座位回归窗口已结束或身份不匹配' });
+          return;
+        }
+        if (!pos || pos.isBot || pos.pendingSocketId) {
+          socket.emit('RESUME_ROOM_ERROR', { code: 'SEAT_TAKEN', msg: '原座位已由 AI 或其他连接接管' });
+          return;
+        }
+
+        this.clearPlayerReconnectSlot(desk, posId);
+        pos.pendingSocketId = '';
+        const avatarUrl = this.getUserAvatar(socket) || slot.avatarUrl || '';
+        const userName = this.getUserName(socket) || slot.userName || '玩家';
+        this.updatePosStatus(desk.deskId, posId, 1, userName, avatarUrl);
+        this.updateClientState(socket, desk.deskId, posId);
+        const game = this.gameDatas[desk.deskId];
+        const inProgress = !!(game && game.getStatus && game.getStatus() > 0 && game.getStatus() < 3);
+        const paused = this.getPausePayload(desk);
+        socket.emit('SITDOWN_SUCCESS', {
+          deskId: desk.deskId,
+          posId,
+          roomCode: desk.roomCode,
+          gameType: desk.gameType,
+          gameLabel: desk.gameLabel,
+          seatCount: desk.seatCount,
+          isPrivate: desk.isPrivate,
+          guandanLevelLabel: desk.guandanLevelLabel,
+          guandanLevelRank: desk.guandanLevelRank,
+          ownerName: desk.ownerName,
+          aiDifficulty: desk.aiDifficulty,
+          aiDifficultyLabel: AiDifficulty.aiDifficultyLabel(desk.aiDifficulty),
+          takeoverBot: false,
+          gameInProgress: inProgress,
+          snapshot: inProgress ? this.getPlayerGameSnapshot(desk.deskId, posId) : null,
+          paused,
+          positions: desk.positions,
+          posInfos: this.getOtherPosInfo(desk.deskId, posId),
+          resumed: true,
+        });
+        this.broadCastHouse('STATUS_CHANGE', { deskId: desk.deskId, posId, state: 1 });
+        this.refreshLobby();
+        this.broadCastRoom('POS_STATUS_CHANGE', desk.deskId, {
+          posId, state: 1, userName, avatarUrl, isBot: false, reconnecting: false
+        }, socket);
+        this.broadCastRoom('USER_MESSAGE', desk.deskId, {
+          type: 'SYS', posId, msg: `玩家[${userName}]回到房间`, id: guid(), time: time()
+        }, socket);
+        if (paused && desk.pauseInfo && Number(desk.pauseInfo.posId) === posId) {
+          this.resumePausedGame(desk.deskId, 'reconnect');
+        }
+      });
 
       socket.on('USER_MESSAGE', msg => {
         const client = this.getClient(socket);

@@ -65,11 +65,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;600&family=ZCOOL+XiaoWei&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/theme.css">
-  <link rel="stylesheet" href="/css/style.css?v=site-stats-live-20260830-1">
+  <link rel="stylesheet" href="/css/style.css?v=reconnect-live-20260901-1">
 </head>
 
 <body class="theme-guofeng">
   <div id="app" v-cloak>
+    <div v-if="connectionState === 'reconnecting' || (resumePending && where === 2)" class="connection-banner" role="status" aria-live="polite">
+      <span class="connection-dot"></span>{{connectionMessage || '网络连接中，正在恢复牌局…'}}
+    </div>
     <!-- 登录界面 -->
     <div class="full-screen login-wrapper" v-if="where === 0">
       <div class="login-panel  layout-center">
@@ -664,6 +667,38 @@
       return socket;
     }
 
+    // 断线恢复只保存房间定位和身份标识，不保存手牌等对局机密；
+    // sessionStorage 让同一标签页刷新/网络重连可恢复，主动退出时会清除。
+    var ROOM_RESUME_STORAGE_KEY = 'cardroom_room_resume_v1';
+    function readRoomResumeStorage() {
+      try {
+        var raw = sessionStorage.getItem(ROOM_RESUME_STORAGE_KEY);
+        if (!raw) return null;
+        var data = JSON.parse(raw);
+        if (!data || !data.deskId || !data.mode || (data.mode !== 'player' && data.mode !== 'spectator')) return null;
+        if (data.mode === 'player' && (data.posId === undefined || data.posId === null || data.posId === '')) return null;
+        return {
+          mode: data.mode,
+          deskId: data.deskId,
+          roomCode: data.roomCode || data.deskId,
+          posId: data.mode === 'spectator' ? 'spec' : Number(data.posId),
+          gameType: data.gameType || 'doudizhu',
+          guestId: data.guestId || '',
+          uid: data.uid || '',
+          userName: data.userName || '',
+          savedAt: Number(data.savedAt || 0),
+        };
+      } catch (e) {
+        return null;
+      }
+    }
+    function writeRoomResumeStorage(data) {
+      try { sessionStorage.setItem(ROOM_RESUME_STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+    }
+    function clearRoomResumeStorage() {
+      try { sessionStorage.removeItem(ROOM_RESUME_STORAGE_KEY); } catch (e) {}
+    }
+
     var MAHJONG_TILES = [];
     ['万', '条', '筒'].forEach(function (suit) {
       ['一', '二', '三', '四', '五', '六', '七', '八', '九'].forEach(function (rank) {
@@ -773,11 +808,18 @@
           guandanLevelLabel: '2',
           guandanLevelRank: 15,
           desks: [],
-          client: '',
-          viewportWidth: window.innerWidth || 1280,
-          _pauseTicker: null,
+           client: '',
+           viewportWidth: window.innerWidth || 1280,
+           _pauseTicker: null,
+           connectionState: 'connecting',
+           connectionMessage: '',
+           resumePending: false,
+           _socketLoggedIn: false,
+           _socketWasConnected: false,
+           _resumeRequest: null,
+           _resumeRetryTimer: null,
 
-          cards: [],
+           cards: [],
 
           //房间状态
           roomState: {
@@ -891,9 +933,41 @@
 
           this.client = createClient(location.host);
 
-          // socket 连接失败：避免无限"正在登录…"
+          // Socket.IO 会自动重连；应用层再用短期房间凭据恢复原座位/观战状态。
+          this.client.on('connect', function () {
+            var reconnecting = this._socketWasConnected;
+            this.connectionState = 'connected';
+            this._socketWasConnected = true;
+            if (!reconnecting) return;
+
+            var resume = readRoomResumeStorage();
+            // 访客没有服务端握手身份，需要在新 socket 上重新 LOGIN；
+            // SSO 用户由服务端中间件自动注册，随后 LOGIN_SUCCESS 会触发恢复。
+            if ((this.authMode === 'guest' || this.guestMode)) {
+              var userName = (resume && resume.userName) || this.posState.self.name;
+              if (userName) {
+                this._socketLoggedIn = false;
+                this.client.emit('LOGIN', { userName: userName, guestId: this.guestId });
+              }
+            }
+          }.bind(this));
+
+          this.client.on('disconnect', function () {
+            if (this.where === 2) this.saveRoomResume();
+            this.connectionState = 'reconnecting';
+            this.connectionMessage = this.where === 2
+              ? '网络中断，正在恢复当前牌局…'
+              : '网络中断，正在重新连接…';
+            this.resumePending = !!readRoomResumeStorage();
+            this._socketLoggedIn = false;
+          }.bind(this));
+
           this.client.on('connect_error', function (err) {
-            if (this.isAutoLogin) {
+            if (this.where === 2 || readRoomResumeStorage()) {
+              this.connectionState = 'reconnecting';
+              this.connectionMessage = '网络连接失败，正在重试…';
+              this.resumePending = !!readRoomResumeStorage();
+            } else if (this.isAutoLogin) {
               this.cancelAutoLogin('网络异常：' + (err && err.message ? err.message : '无法连接服务器'));
             }
           }.bind(this));
@@ -909,11 +983,22 @@
 
 
           this.client.on('LOGIN_SUCCESS', function (data) {
+            var resume = readRoomResumeStorage();
+            var shouldResume = !!resume;
             this.desks = data;
-            this.where = 1;
+            // 当前页面已经在牌桌时保持桌面，避免断线期间闪回大厅；
+            // 刷新页面则先落到大厅，收到 SITDOWN/SPECTATE_SUCCESS 后再进入牌桌。
+            this.where = shouldResume && this.where === 2 ? 2 : 1;
             this.isAutoLogin = false;
+            this._socketLoggedIn = true;
+            this.connectionState = 'connected';
+            this.connectionMessage = '';
             if (this._autoLoginTimer) { clearTimeout(this._autoLoginTimer); this._autoLoginTimer = null; }
             layer.closeAll();
+            if (shouldResume) {
+              this.resumePending = true;
+              this.$nextTick(function () { this.resumeRoomAfterLogin(); }.bind(this));
+            }
           }.bind(this));
 
           // 服务端推送的个人战绩
@@ -941,6 +1026,7 @@
             if (this.isAutoLogin) {
               this.cancelAutoLogin(data && data.msg ? data.msg : '自动登录失败');
             } else {
+              this._socketLoggedIn = false;
               layer.msg(data.msg);
             }
           }.bind(this));
@@ -971,6 +1057,7 @@
 
           this.client.on('SITDOWN_SUCCESS', function (data) {
             this.where = 2;
+            this.isSpec = false;
             this.posId = data.posId;
             this.deskId = data.deskId;
             this.roomCode = data.roomCode || data.deskId;
@@ -992,12 +1079,31 @@
             this.$nextTick(function () {
               if (this.$refs.msgInput) this.$refs.msgInput.value = '';
             });
+            this.saveRoomResume();
+            if (data.resumed) this.completeRoomResume();
             layer.closeAll();
           }.bind(this));
 
           this.client.on('SITDOWN_ERROR', function (data) {
             layer.closeAll();
             layer.msg(data.msg);
+          }.bind(this));
+
+          this.client.on('RESUME_ROOM_ERROR', function (data) {
+            var code = data && data.code;
+            if (code === 'ALREADY_IN_ROOM') {
+              this.completeRoomResume();
+              return;
+            }
+            if (code === 'ROOM_NOT_FOUND' || code === 'RESUME_EXPIRED' || code === 'IDENTITY_MISMATCH' || code === 'SEAT_TAKEN') {
+              this.clearRoomResume();
+              if (this.where === 2) this.resetRoomStatus();
+            } else {
+              this._resumeRequest = null;
+              this.resumePending = false;
+            }
+            layer.closeAll();
+            layer.msg((data && data.msg) || '房间恢复失败，请重新入房');
           }.bind(this));
 
           this.client.on('AI_DIFFICULTY_ERROR', function (data) {
@@ -1037,8 +1143,10 @@
             this.$nextTick(function () {
               if (this.$refs.msgInput) this.$refs.msgInput.value = '';
             });
+            this.saveRoomResume();
+            if (data.resumed) this.completeRoomResume();
             layer.closeAll();
-            layer.msg('已进入观战', { time: 1200 });
+            if (!data.resumed) layer.msg('已进入观战', { time: 1200 });
           }.bind(this));
 
           this.client.on('SPECTATE_ERROR', function (data) {
@@ -1850,6 +1958,66 @@
             console.error('[login]', msg);
           }
         },
+        getRoomResume: function () {
+          return readRoomResumeStorage();
+        },
+        saveRoomResume: function () {
+          if (!this.deskId || this.posId === '' || this.posId === null || this.posId === undefined) return;
+          var mode = this.isSpec ? 'spectator' : 'player';
+          writeRoomResumeStorage({
+            mode: mode,
+            deskId: this.deskId,
+            roomCode: this.roomCode || this.deskId,
+            posId: mode === 'spectator' ? 'spec' : Number(this.posId),
+            gameType: this.gameType || 'doudizhu',
+            guestId: this.guestId || '',
+            uid: this.myUser && this.myUser.uid ? String(this.myUser.uid) : '',
+            userName: (this.myUser && this.myUser.username) || this.posState.self.name || '',
+            savedAt: Date.now(),
+          });
+        },
+        clearRoomResume: function () {
+          clearRoomResumeStorage();
+          this.resumePending = false;
+          this._resumeRequest = null;
+          if (this._resumeRetryTimer) {
+            clearTimeout(this._resumeRetryTimer);
+            this._resumeRetryTimer = null;
+          }
+        },
+        resumeRoomAfterLogin: function () {
+          var resume = readRoomResumeStorage();
+          if (!resume || !this.client || !this.client.connected || !this._socketLoggedIn) return;
+          if (this._resumeRequest) return;
+          this._resumeRequest = resume;
+          this.resumePending = true;
+          this.connectionState = 'connected';
+          this.connectionMessage = '正在恢复当前牌局…';
+          this.client.emit('RESUME_ROOM', {
+            mode: resume.mode,
+            deskId: resume.deskId,
+            roomCode: resume.roomCode,
+            posId: resume.posId,
+            gameType: resume.gameType,
+          });
+          if (this._resumeRetryTimer) clearTimeout(this._resumeRetryTimer);
+          this._resumeRetryTimer = setTimeout(function () {
+            if (!this._resumeRequest) return;
+            this._resumeRequest = null;
+            this.resumePending = false;
+            this.connectionMessage = '恢复请求超时，请稍候重试或返回大厅';
+          }.bind(this), 8000);
+        },
+        completeRoomResume: function () {
+          if (this._resumeRetryTimer) {
+            clearTimeout(this._resumeRetryTimer);
+            this._resumeRetryTimer = null;
+          }
+          this._resumeRequest = null;
+          this.resumePending = false;
+          this.connectionState = 'connected';
+          this.connectionMessage = '';
+        },
         login: function () {
           if (!this.posState.self.name) {
             return layer.msg('请输入名字');
@@ -2265,6 +2433,8 @@
           }
         },
         exitRoom: function () {
+          // 主动离开与网络断线不同：主动退出后不再自动回到原桌。
+          this.clearRoomResume();
           if (this.isSpec) {
             this.client.emit('UNSPECTATE');
           } else {
@@ -2273,6 +2443,7 @@
           layer.load({ type: 3 });
         },
         resetRoomStatus: function () {
+          this.clearRoomResume();
           this.clearPauseCountdown();
           this.where = 1;
           this.posId = '';
