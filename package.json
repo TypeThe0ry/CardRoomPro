@@ -14,9 +14,10 @@
     "test:spectator-ui": "node test/spectator-ui.test.js",
     "test:spectator-live": "node test/spectator-live.test.js",
     "test:pause-takeover-live": "node test/pause-takeover-live.test.js",
+    "test:startup-failure": "node test/startup-failure.test.js",
     "test:room-controls": "node test/room-controls.test.js",
     "stats:backfill": "node scripts/backfill-site-stats.js",
-    "test": "npm run test:ai && npm run test:history && npm run test:sso-auth && npm run test:chat-regression && npm run test:site-stats-live && npm run test:spectator-ui && npm run test:spectator-live && npm run test:pause-takeover-live && npm run test:room-controls"
+    "test": "npm run test:ai && npm run test:history && npm run test:sso-auth && npm run test:chat-regression && npm run test:site-stats-live && npm run test:spectator-ui && npm run test:spectator-live && npm run test:pause-takeover-live && npm run test:startup-failure && npm run test:room-controls"
   },
   "author": "TypeThe0ry",
   "license": "MIT",

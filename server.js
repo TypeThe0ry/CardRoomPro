@@ -1,6 +1,9 @@
-// ========== 全局错误保护（防止单个异常崩溃整个进程）==========
+// ========== 全局错误保护（记录致命异常并交给进程管理器重启）==========
 process.on('uncaughtException', function (err) {
   console.error('[FATAL] uncaughtException:', err);
+  // 未捕获异常可能已经破坏进程状态；继续运行会让 systemd/pm2 误判服务健康。
+  // 退出码交给进程管理器处理，尤其要正确暴露 EADDRINUSE 等启动错误。
+  process.exit(1);
 });
 process.on('unhandledRejection', function (reason, promise) {
   console.error('[FATAL] unhandledRejection:', reason);
