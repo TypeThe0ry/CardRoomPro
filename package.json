@@ -8,11 +8,15 @@
     "start": "node server.js",
     "test:ai": "node test/ai.test.js",
     "test:history": "node test/history.test.js",
+    "test:sso-auth": "node test/sso-auth.test.js",
+    "test:chat-regression": "node test/chat-regression.test.js",
     "test:site-stats-live": "node test/site-stats-live.test.js",
     "test:spectator-ui": "node test/spectator-ui.test.js",
+    "test:spectator-live": "node test/spectator-live.test.js",
+    "test:pause-takeover-live": "node test/pause-takeover-live.test.js",
     "test:room-controls": "node test/room-controls.test.js",
     "stats:backfill": "node scripts/backfill-site-stats.js",
-    "test": "npm run test:ai && npm run test:history && npm run test:site-stats-live && npm run test:spectator-ui && npm run test:room-controls"
+    "test": "npm run test:ai && npm run test:history && npm run test:sso-auth && npm run test:chat-regression && npm run test:site-stats-live && npm run test:spectator-ui && npm run test:spectator-live && npm run test:pause-takeover-live && npm run test:room-controls"
   },
   "author": "TypeThe0ry",
   "license": "MIT",

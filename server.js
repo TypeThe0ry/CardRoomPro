@@ -128,16 +128,10 @@ function verifySsoToken(token) {
 }
 
 function verifyCompatibleJwt(token, secret, jwt) {
-  try {
-    return jwt.verify(token, secret, jwtVerifyOptions(token));
-  } catch (err) {
-    // 旧 Discuz/SSO 部署可能已经用同一密钥签发了不同 iss/aud 的 token。
-    // 仅在签名、算法和 exp 本身仍然有效时放行迁移态；签名错误和过期 token 仍然拒绝。
-    const message = String(err && err.message || '');
-    const claimMismatch = err && err.name === 'JsonWebTokenError' && /jwt (issuer|audience) invalid/i.test(message);
-    if (!claimMismatch) throw err;
-    return jwt.verify(token, secret, { algorithms: ['HS256'] });
-  }
+  // jwtVerifyOptions 已经对缺少 iss/aud 的旧 token 做了兼容：缺失时不启用
+  // 对应约束；但 token 明确携带错误 iss/aud 时必须让 verify 失败，不能再
+  // 退回到“只验签名”的路径，否则 JWT_ISSUER/JWT_AUDIENCE 形同虚设。
+  return jwt.verify(token, secret, jwtVerifyOptions(token));
 }
 
 // 2) /api/* 简单速率限制（按 IP，每 10 秒 30 次），抵御暴力探测/扫表。
@@ -227,18 +221,13 @@ app.get('/api/site-stats', (req, res) => {
   db.getSiteStats().then(stats => res.json(stats)).catch(() => res.status(500).json({ error: 'stats_error' }));
 });
 
-// HTTP：SSO 密钥健康检查（仅返回指纹，不泄漏明文）
-// 对比论坛侧同样指纹即可确认两边是否一致
+// HTTP：SSO 配置健康检查。公开响应只返回布尔配置状态，不暴露密钥长度、
+// 来源或可用于离线比对候选密钥的指纹；详细密钥核对请在服务器本地完成。
 app.get('/api/sso/health', (req, res) => {
-  const crypto = require('crypto');
   const s = proto.JWT_SECRET || '';
   const isDefault = (s === 'change_this_in_production');
-  const fp = s ? crypto.createHash('sha256').update(s).digest('hex').slice(0, 16) : '';
   res.json({
     hasSecret: !!s && !isDefault,
-    length: s.length,
-    fingerprint: fp,
-    source: process.env.JWT_SECRET ? 'env' : (require('fs').existsSync(require('path').join(__dirname, 'sso-secret.txt')) ? 'file' : 'default'),
     issuerConfigured: !!String(process.env.JWT_ISSUER || '').trim(),
     audienceConfigured: !!String(process.env.JWT_AUDIENCE || '').trim(),
     queryTokenAccepted: process.env.ALLOW_QUERY_TOKEN === '1' || process.env.ALLOW_QUERY_TOKEN === 'true',
@@ -2064,7 +2053,9 @@ const proto = {
         if (posId === 'spec') {
           const userName = this.getUserName(socket) || '观众';
           const payload = { type: 'SPEC', posId: 'spec', name: userName, msg, time: time(), id: guid() };
-          this.broadCastRoom('USER_MESSAGE', deskId, payload);
+          // broadCastRoom 默认会跳过传入的 socket；观众自己的消息单独回显一次，
+          // 避免“广播一次 + socket.emit 一次”导致发送者收到两条相同消息。
+          this.broadCastRoom('USER_MESSAGE', deskId, payload, socket);
           socket.emit('USER_MESSAGE', payload);
           return;
         }
