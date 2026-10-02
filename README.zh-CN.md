@@ -99,6 +99,27 @@ cp config.example.json config.json
 
 不要把 `config.json`、数据库密码、JWT 密钥或 SSO 密钥提交到仓库。
 
+### systemd 部署：不要把密钥写进 unit
+
+不要把 `JWT_SECRET`、`DB_PASSWORD` 等敏感配置写在 `Environment=` 行中，否则任何能读取 unit 的人执行 `systemctl cat` 即可看到。请改用仅 root 可读的环境文件，并通过 `EnvironmentFile=` 引用：
+
+```bash
+sudo install -m 600 -o root -g root /dev/null /etc/cardroom.env
+sudoedit /etc/cardroom.env   # 每行 KEY=value：JWT_SECRET、DB_PASSWORD 等
+```
+
+```ini
+# /etc/systemd/system/cardroom.service
+[Service]
+WorkingDirectory=/opt/CardRoomPro
+EnvironmentFile=/etc/cardroom.env
+Environment=PORT=8002
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+```
+
+执行 `systemctl daemon-reload && systemctl restart cardroom` 后，用 `ss -ltnp | grep 8002` 确认只有 systemd 管理的进程在监听端口。服务在 `EADDRINUSE` 等启动错误时会以非零码退出，旧进程占用端口会表现为 unit 失败，而不是误报 `active`。
+
 ## 智囊与 AI
 
 - **AI 座位**由服务端机器人状态机自动出牌。
