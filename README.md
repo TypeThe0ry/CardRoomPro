@@ -175,6 +175,27 @@ node server.js
 
 Use the same `JWT_SECRET` as the SSO issuer, restrict MySQL access, and keep the application port private when Nginx or another reverse proxy is enabled.
 
+### systemd: keep secrets out of the unit file
+
+Do not put `JWT_SECRET`, `DB_PASSWORD`, or other credentials in `Environment=` lines: `systemctl cat` prints them to anyone who can read the unit. Store them in a root-only environment file and reference it with `EnvironmentFile=`:
+
+```bash
+sudo install -m 600 -o root -g root /dev/null /etc/cardroom.env
+sudoedit /etc/cardroom.env   # KEY=value lines: JWT_SECRET, DB_PASSWORD, ...
+```
+
+```ini
+# /etc/systemd/system/cardroom.service
+[Service]
+WorkingDirectory=/opt/CardRoomPro
+EnvironmentFile=/etc/cardroom.env
+Environment=PORT=8002
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+```
+
+After `systemctl daemon-reload && systemctl restart cardroom`, confirm with `ss -ltnp | grep 8002` that only the systemd-managed process listens on the port. The server exits non-zero on startup errors such as `EADDRINUSE`, so a stale process holding the port shows up as a failed unit instead of a false `active`.
+
 ## SSO and public discovery
 
 - Website metadata is published at `/robots.txt`, `/sitemap.xml`, `/llms.txt`, and `/site.webmanifest`.
